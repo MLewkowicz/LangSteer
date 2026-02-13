@@ -1,0 +1,97 @@
+# DP3 Training Configuration for CALVIN Dataset
+# Full training configuration for production runs on SLURM cluster
+
+# Dataset Configuration
+dataset:
+  zarr_path: "${oc.env:CALVIN_ZARR_PATH,/path/to/calvin_training.zarr}"
+  val_ratio: 0.1  # 10% for validation
+  max_train_episodes: null  # Use all episodes (set to int to limit)
+
+# Policy Architecture (inherits from policy/dp3.yaml structure)
+policy:
+  name: dp3
+  obs_horizon: 2
+  pred_horizon: 16
+  action_horizon: 8
+  num_points: 2048
+
+  # Shape meta (CALVIN-specific)
+  shape_meta:
+    obs:
+      point_cloud:
+        shape: [2048, 3]
+        type: point_cloud
+      agent_pos:
+        shape: [15]  # CALVIN robot state dimension
+        type: low_dim
+    action:
+      shape: [7]  # CALVIN action: [x,y,z,rx,ry,rz,gripper]
+
+  # Encoder Configuration
+  encoder:
+    output_dim: 64
+    use_pc_color: false  # Only use XYZ, not RGB
+    pointnet_type: "pointnet"
+
+  # Diffusion Model Configuration
+  diffusion:
+    down_dims: [512, 1024, 2048]
+    kernel_size: 5
+    n_groups: 8
+    diffusion_step_embed_dim: 256
+
+  # Noise Scheduler (DDIM)
+  scheduler:
+    num_train_timesteps: 100
+    num_inference_steps: 10
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: "squaredcos_cap_v2"
+    clip_sample: true
+    prediction_type: "sample"
+
+# Training Hyperparameters
+horizon: 16  # Must match pred_horizon
+batch_size: 128  # Per GPU
+num_workers: 8  # DataLoader workers per GPU
+learning_rate: 1.0e-4
+betas: [0.95, 0.999]
+weight_decay: 1.0e-6
+
+# Training Schedule
+num_epochs: 3000
+val_every: 10  # Validate every N epochs
+checkpoint_every: 50  # Save checkpoint every N epochs
+
+# Optimization
+gradient_accumulation_steps: 1
+gradient_clip: 1.0  # Gradient clipping threshold
+use_lr_scheduler: true
+lr_min: 1.0e-6  # Minimum learning rate for cosine scheduler
+
+# EMA (Exponential Moving Average)
+use_ema: true
+ema_power: 0.75
+ema_max_value: 0.9999
+ema_update_after_step: 0
+ema_inv_gamma: 1.0
+
+# Device & Seed
+device: "cuda"  # Overridden by DDP setup
+seed: 42
+
+# Checkpoint Management
+save_top_k: 3  # Keep top 3 checkpoints based on val_loss
+resume: false  # Set to true to resume from latest checkpoint
+resume_checkpoint_path: null  # Or specify specific checkpoint
+
+# Logging
+use_wandb: true
+wandb_project: "langsteer_dp3"
+experiment_name: "dp3_calvin_${now:%Y%m%d_%H%M%S}"
+checkpoint_dir: "outputs/checkpoints/${experiment_name}"
+
+# Notes for SLURM:
+# - batch_size is per GPU (effective batch = batch_size * num_gpus)
+# - num_workers is per GPU
+# - Set CALVIN_ZARR_PATH environment variable or override zarr_path
