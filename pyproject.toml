@@ -8,6 +8,7 @@ dependencies = [
     "hydra-core>=1.3.2",
     "numpy>=2.2.6",
     "torch>=2.10.0",
+    "calvin-env @ git+https://github.com/mees/calvin_env.git",
 ]
 
 [dependency-groups]
@@ -16,3 +17,13 @@ dev = [
     "pytest>=9.0.2",
     "ruff>=0.15.0",
 ]
+calvin = [
+    "calvin-env @ git+https://github.com/mees/calvin_env.git",
+]
+diffusion = [
+    "diffusers>=0.21.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["core*", "envs*", "policies*", "steering*", "scripts*"]
+exclude = ["calvin*", "3D-Diffusion-Policy*", "conf*", "training*"]

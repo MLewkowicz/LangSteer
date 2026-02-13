@@ -1,0 +1,24 @@
+# CALVIN Environment Configuration
+
+name: calvin
+
+# Task specification
+task: "open_drawer"  # Task name to look up in language annotations
+
+# Dataset/environment settings
+dataset_path: "/home/mlewkowicz/calvin/dataset/task_D_D"  # Path to CALVIN dataset (e.g., "/path/to/calvin_debug_dataset/")
+split: "validation"  # Dataset split: "training" or "validation"
+use_gui: false      # Show PyBullet GUI for debugging
+
+# Observation settings
+num_points: 2048    # Number of points in point cloud
+
+# Language annotations
+lang_ann_path: "/home/mlewkowicz/calvin/dataset/task_D_D/validation/lang_annotations/auto_lang_ann.npy"  # Path to auto_lang_ann.npy (e.g., "/path/to/calvin_debug_dataset/validation/lang_annotations/auto_lang_ann.npy")
+
+# Episode settings
+max_steps: 360      # Maximum steps per episode
+render_mode: null   # Render mode: null, "rgb_array", or "human"
+
+# Task-specific reset
+use_task_initial_condition: false  # Enable task-specific scene state reset

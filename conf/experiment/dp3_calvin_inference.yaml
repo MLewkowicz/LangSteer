@@ -1,0 +1,32 @@
+# DP3 + CALVIN Inference Experiment Configuration
+# Configuration for running DP3 policy inference on CALVIN tasks with visualization
+
+# @package _global_
+
+# Experiment metadata
+experiment_name: "dp3_calvin_inference"
+num_episodes: 1    # Single episode for visualization (increase for evaluation)
+seed: 42           # Random seed
+
+# Environment overrides
+env:
+  task: "open_drawer"  # Task to visualize (see task_configs.py for available tasks)
+  dataset_path: "${oc.env:CALVIN_DATASET_PATH,/home/mlewkowicz/calvin/dataset/task_D_D}"
+  lang_ann_path: "${oc.env:CALVIN_DATASET_PATH,/home/mlewkowicz/calvin/dataset/task_D_D}/validation/lang_annotations/auto_lang_ann.npy"
+  use_gui: true  # Enable PyBullet GUI for visualization
+  use_task_initial_condition: true  # Reset to task-specific scene state
+  max_steps: 360
+
+# Policy overrides
+policy:
+  ckpt_path: "${oc.env:DP3_CHECKPOINT_PATH,null}"  # Set via DP3_CHECKPOINT_PATH env variable
+  device: "cuda"
+
+# Visualization & Logging
+enable_gui: true  # Show PyBullet window during execution
+log_trajectory: true  # Save trajectory data (actions, observations, rewards)
+log_dir: "outputs/${experiment_name}/trajectories"
+
+# Logging
+logging:
+  level: "INFO"

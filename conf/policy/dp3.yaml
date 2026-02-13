@@ -1,0 +1,50 @@
+# DP3 Policy Configuration
+
+name: dp3
+
+# Checkpoint
+ckpt_path: "/home/mlewkowicz/data/outputs/calvin-dp3-0322_seed0/checkpoints/latest.ckpt"  # Path to trained DP3 checkpoint (.pth or .ckpt file)
+device: "cuda"   # Device: "cuda" or "cpu"
+strict_normalizer: false  # If true, raise error if checkpoint has no normalizer
+
+# Architecture
+obs_horizon: 2       # Number of observation frames to condition on
+pred_horizon: 16     # Prediction horizon
+action_horizon: 8    # Number of actions to execute
+num_points: 2048     # Number of points in point cloud
+
+# Shape meta (optional - defaults to CALVIN dimensions)
+# Uncomment and modify for different robots/environments
+# shape_meta:
+#   obs:
+#     point_cloud:
+#       shape: [2048, 3]
+#       type: point_cloud
+#     agent_pos:
+#       shape: [15]  # Robot state dimension
+#       type: low_dim
+#   action:
+#     shape: [7]  # Action dimension
+
+# Encoder Configuration
+encoder:
+  output_dim: 64       # Output dimension of observation encoder
+  use_pc_color: false  # Whether to use RGB colors in point clouds (false = XYZ only)
+  pointnet_type: "pointnet"  # Type of PointNet encoder
+
+# Diffusion Model Configuration
+diffusion:
+  down_dims: [512, 1024, 2048]  # U-Net downsampling dimensions
+  kernel_size: 5                 # Convolution kernel size
+  n_groups: 8                    # Number of groups for GroupNorm
+  diffusion_step_embed_dim: 256  # Timestep embedding dimension
+
+# Noise Scheduler Configuration (DDIM)
+scheduler:
+  num_train_timesteps: 100  # Number of diffusion steps during training
+  num_inference_steps: 10   # Number of denoising steps during inference
+  beta_start: 0.0001        # Starting beta value
+  beta_end: 0.02            # Ending beta value
+  beta_schedule: "squaredcos_cap_v2"  # Beta schedule type
+  clip_sample: true         # Clip samples to valid range
+  prediction_type: "sample" # Prediction type: "epsilon", "sample", or "v_prediction"

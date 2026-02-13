@@ -5,10 +5,10 @@ import torch
 from core.steering import BaseSteering
 
 
-class AnalyticalSteering(BaseSteering):
+class TweedieSteering(BaseSteering):
     """
-    Analytical guidance for steering diffusion policies.
-    Uses analytical methods (e.g., Tweedie's formula) to guide the denoising process.
+    Tweedie guidance for steering diffusion policies.
+    Uses Tweedie's formula to guide the denoising process.
     """
     
     def __init__(self, cfg: Any) -> None:
@@ -19,7 +19,7 @@ class AnalyticalSteering(BaseSteering):
     
     def get_guidance(self, current_sample: torch.Tensor, timestep: int, obs_embedding: Any) -> torch.Tensor:
         """
-        Calculates the guidance signal using analytical methods.
+        Calculates the guidance signal using Tweedie's formula.
         
         Args:
             current_sample: The noisy latents/trajectory at current diffusion step.
@@ -33,4 +33,4 @@ class AnalyticalSteering(BaseSteering):
         # 1. Compute analytical guidance (e.g., Tweedie's formula, value function gradient)
         # 2. Scale by guidance_strength
         # 3. Return guidance vector
-        raise NotImplementedError("AnalyticalSteering.get_guidance() not yet implemented")
+        raise NotImplementedError("TweedieSteering.get_guidance() not yet implemented")

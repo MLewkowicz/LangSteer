@@ -4,6 +4,7 @@ defaults:
   - policy: dp3
   - steering: none
   - experiment: null
+  - training: null  # Optional: specify training config for training mode
 
 hydra:
   run:
