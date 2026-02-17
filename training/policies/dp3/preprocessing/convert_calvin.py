@@ -239,6 +239,19 @@ def process_calvin_frame(env, rgb_static, rgb_gripper, depth_static, depth_gripp
 
 def make_env(dataset_path, split):
     val_folder = Path(dataset_path) / split
+    # Remove tactile camera to avoid urdfpy np.float incompatibility with NumPy 2.0
+    # (same fix applied in envs/calvin_utils/gym_wrapper.py)
+    from omegaconf import OmegaConf
+    import shutil
+    config_path = val_folder / '.hydra' / 'merged_config.yaml'
+    if config_path.exists():
+        config = OmegaConf.load(config_path)
+        if 'env' in config and 'cameras' in config.env and 'tactile' in config.env.cameras:
+            del config.env.cameras['tactile']
+            config_backup = val_folder / '.hydra' / 'merged_config_original.yaml'
+            if not config_backup.exists():
+                shutil.copy(config_path, config_backup)
+            OmegaConf.save(config, config_path)
     return get_env(val_folder, show_gui=False)
 
 def convert_calvin_to_dp3(root_dir, save_path, split=None, tasks=None, use_cuda=False, overwrite=False, process_both_splits=True, visualize_samples=False, visualize_every_n=100, visualize_save_dir=None):

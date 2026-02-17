@@ -20,14 +20,8 @@ cd LangSteer
 ### 2. Install Dependencies
 
 ```bash
-# Install all dependencies including CALVIN environment
+# Install all dependencies (including CALVIN environment and DP3 dependencies)
 uv sync
-
-# Install the package in editable mode
-uv pip install -e .
-
-# Install DP3 dependencies
-uv pip install diffusers dill einops termcolor
 ```
 
 ### 3. Setup CALVIN Environment
