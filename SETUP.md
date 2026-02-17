@@ -244,22 +244,4 @@ All 34 CALVIN tasks are supported with task-specific initial conditions:
 
 See `envs/calvin_utils/task_configs.py` for complete list and initial conditions.
 
-## Citation
 
-If you use this code, please cite:
-
-```bibtex
-@article{ze20233d,
-  title={3D Diffusion Policy},
-  author={Ze, Yanjie and others},
-  journal={arXiv preprint arXiv:2403.03954},
-  year={2023}
-}
-
-@article{mees2022calvin,
-  title={CALVIN: A Benchmark for Language-Conditioned Policy Learning for Long-Horizon Robot Manipulation Tasks},
-  author={Mees, Oier and others},
-  journal={IEEE Robotics and Automation Letters},
-  year={2022}
-}
-```

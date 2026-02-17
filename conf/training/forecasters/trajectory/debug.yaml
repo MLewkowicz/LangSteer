@@ -1,0 +1,17 @@
+# Debug Training Configuration
+# For quick iteration and testing with limited data
+
+defaults:
+  - full  # Inherit from full training, override for debugging
+
+# Dataset configuration - limited data
+dataset:
+  max_train_episodes: 100  # Limit to 100 episodes for fast iteration
+
+# Training hyperparameters - smaller for debugging
+training:
+  batch_size: 16       # Smaller batch size
+  num_epochs: 10       # Fewer epochs
+  val_every: 2         # Validate more frequently
+  checkpoint_every: 5  # Checkpoint more frequently
+  use_wandb: false     # Disable WandB for debugging

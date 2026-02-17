@@ -57,20 +57,24 @@ class CalvinEnvironment(BaseEnvironment):
         logger.info(f"  Max steps: {self._max_steps}")
         logger.info(f"  Use task-specific reset: {self._use_task_initial_condition}")
 
-    def reset(self) -> Observation:
+    def reset(self, robot_obs=None, scene_obs=None) -> Observation:
         """
         Resets the environment to an initial state and returns the first observation.
-        If use_task_initial_condition is True, resets to task-specific scene state.
+
+        Args:
+            robot_obs: Optional (15,) array for robot state override (from reference trajectory)
+            scene_obs: Optional (24,) array for scene state override (from reference trajectory)
 
         Returns:
             Observation DTO with point cloud, proprioception, EE pose, and instruction
         """
-        # Get task-specific initial condition if enabled
-        robot_obs, scene_obs = None, None
-        if self._use_task_initial_condition:
+        # If no override provided and task-specific reset is enabled, use task initial condition
+        if robot_obs is None and scene_obs is None and self._use_task_initial_condition:
             initial_condition = self._get_initial_condition_fn(self._task_name)
             robot_obs, scene_obs = self._get_env_state_fn(initial_condition)
             logger.info(f"Resetting to task-specific state: {initial_condition}")
+        elif robot_obs is not None or scene_obs is not None:
+            logger.info("Resetting to provided robot/scene state (reference trajectory)")
 
         # Reset CALVIN environment with optional scene state
         calvin_obs = self._gym_env.reset(robot_obs=robot_obs, scene_obs=scene_obs)

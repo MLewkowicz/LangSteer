@@ -123,6 +123,10 @@ class DP3Policy(BasePolicy):
         # Handle different checkpoint formats
         if 'state_dict' in checkpoint:
             state_dict = checkpoint['state_dict']
+        elif 'state_dicts' in checkpoint and 'model' in checkpoint['state_dicts']:
+            # Handle 3D-Diffusion-Policy checkpoint format
+            state_dict = checkpoint['state_dicts']['model']
+            logger.info("Loading from 3D-Diffusion-Policy checkpoint format")
         else:
             state_dict = checkpoint
 
@@ -295,9 +299,9 @@ class DP3Policy(BasePolicy):
             # Create guidance function if steering is provided
             guidance_fn = None
             if steering is not None:
-                def guidance_fn(trajectory, timestep, obs_embedding):
+                def guidance_fn(trajectory, timestep, obs_embedding, model_output):
                     """Wrapper to call steering.get_guidance()."""
-                    return steering.get_guidance(trajectory, timestep, obs_embedding)
+                    return steering.get_guidance(trajectory, timestep, obs_embedding, model_output)
 
             # Run DP3 inference with optional guidance
             action_dict = self._dp3_model.predict_action(obs_dict, guidance_fn=guidance_fn)

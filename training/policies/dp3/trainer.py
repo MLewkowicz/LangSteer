@@ -21,9 +21,9 @@ from typing import Optional
 from policies.dp3_components.dp3_policy import DP3
 from policies.dp3_components.normalizer import LinearNormalizer
 from diffusers import DDIMScheduler
-from training.calvin_dataset import CalvinDataset
-from training.checkpoint_util import TopKCheckpointManager
-from training.ema_model import EMAModel
+from training.policies.dp3.dataset import CalvinDataset
+from training.common.checkpoint_util import TopKCheckpointManager
+from training.common.ema_model import EMAModel
 
 logger = logging.getLogger(__name__)
 

@@ -8,3 +8,13 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Experiment outputs
+outputs/
+
+# Folders
+calvin/
+
+# Configs
+.claude/
+.archive/

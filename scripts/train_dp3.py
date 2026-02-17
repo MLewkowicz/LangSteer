@@ -29,7 +29,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 import logging
 
-from training.dp3_trainer import DP3TrainingWorkspace
+from training.policies.dp3.trainer import DP3TrainingWorkspace
 
 logger = logging.getLogger(__name__)
 

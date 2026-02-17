@@ -11,6 +11,8 @@ from core.types import Observation, Action
 from core.env import BaseEnvironment
 from core.policy import BasePolicy
 from core.steering import BaseSteering
+from utils.rollout import EpisodeRunner
+from visualization import VisualizationManager, VisualizationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +87,30 @@ def main(cfg: DictConfig) -> None:
     policy = instantiate_policy(cfg)
     steering = instantiate_steering(cfg)
 
+    # Initialize visualization manager if enabled
+    viz_manager = None
+    if 'visualization' in cfg and OmegaConf.to_container(cfg.visualization, resolve=True):
+        viz_config = VisualizationConfig.from_dict(OmegaConf.to_container(cfg.visualization, resolve=True))
+        if viz_config.is_any_enabled():
+            viz_manager = VisualizationManager(viz_config)
+            logger.info(f"Initialized {viz_manager}")
+
+    # Initialize steering with policy's scheduler and trajectory loader
+    if steering is not None:
+        if hasattr(steering, 'set_scheduler'):
+            steering.set_scheduler(policy._dp3_model.noise_scheduler)
+            logger.info("Set scheduler reference for steering")
+
+        if hasattr(steering, 'set_trajectory_loader'):
+            from utils.reference_trajectory_loader import ReferenceTrajectoryLoader
+            loader = ReferenceTrajectoryLoader(
+                dataset_path=cfg.env.dataset_path,
+                split=cfg.env.split,
+                lang_ann_path=cfg.env.lang_ann_path
+            )
+            steering.set_trajectory_loader(loader)
+            logger.info("Initialized reference trajectory loader for steering")
+
     # Setup logging
     enable_gui = cfg.get("enable_gui", False)
     log_trajectory = cfg.get("log_trajectory", False)
@@ -92,6 +118,15 @@ def main(cfg: DictConfig) -> None:
     if log_trajectory:
         log_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Trajectory data will be saved to: {log_dir}")
+
+    # Create episode runner
+    runner = EpisodeRunner(
+        env=env,
+        policy=policy,
+        steering=steering,
+        max_steps=cfg.get("max_steps", 1000),
+        collect_data=log_trajectory
+    )
 
     # Run evaluation loop
     num_episodes = cfg.get("num_episodes", 10)
@@ -103,73 +138,91 @@ def main(cfg: DictConfig) -> None:
         logger.info(f"Task: {env.task_description}")
         logger.info(f"{'='*60}")
 
-        obs = env.reset()
-        policy.reset()
+        # Setup episode-specific steering and/or reference initial conditions
+        obs = None
+        use_reference_init = cfg.get('use_reference_init', False)
 
-        episode_reward = 0.0
-        step_count = 0
-        done = False
+        if steering is not None and hasattr(steering, 'setup_episode'):
+            # Steering is active - use reference trajectory initial state
+            robot_obs, scene_obs = steering.setup_episode(env._task_name)
 
-        # Trajectory storage
-        if log_trajectory:
-            trajectory_data = {
-                "actions": [],
-                "observations": [],
-                "rewards": [],
-                "ee_poses": [],
-                "task": env.task_description
-            }
+            if robot_obs is not None and scene_obs is not None:
+                obs = env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
+                logger.info("Reset environment to reference trajectory starting state (steering active)")
+            else:
+                obs = env.reset()
+        elif use_reference_init:
+            # Steering is NOT active, but user wants to use reference initial conditions
+            # Load reference trajectory just for initial state
+            from utils.reference_trajectory_loader import ReferenceTrajectoryLoader
+            loader = ReferenceTrajectoryLoader(
+                dataset_path=cfg.env.dataset_path,
+                split=cfg.env.split,
+                lang_ann_path=cfg.env.lang_ann_path
+            )
+            traj_data = loader.load_trajectory_for_task(env._task_name)
 
-        while not done:
-            # Get action from policy (with optional steering)
-            action = policy.forward(obs, steering=steering)
+            if traj_data is not None:
+                robot_obs = traj_data['robot_obs_init']
+                scene_obs = traj_data['scene_obs_init']
+                obs = env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
+                logger.info("Reset environment to reference trajectory starting state (no steering, for comparison)")
+            else:
+                logger.warning(f"No reference trajectory found for task {env._task_name}, using default reset")
+                obs = env.reset()
+        else:
+            # Normal reset with task-specific or random initial conditions
+            obs = env.reset()
 
-            # Display step info
-            logger.info(f"Step {step_count:3d} | Action: {action.trajectory[0][:3]} (pos) {action.trajectory[0][6]:.2f} (grip)")
+        # Define step callback for logging and steering step tracking
+        def step_callback(timestep, obs, action, reward, done, info):
+            # Increment steering step counter for sliding window
+            if steering is not None and hasattr(steering, 'increment_step'):
+                steering.increment_step()
 
-            # Step environment
-            obs, reward, done, info = env.step(action)
-            episode_reward += reward
-            step_count += 1
-
-            # Log trajectory data
-            if log_trajectory:
-                trajectory_data["actions"].append(action.trajectory[0])
-                trajectory_data["observations"].append(obs.pcd)
-                trajectory_data["rewards"].append(reward)
-                trajectory_data["ee_poses"].append(obs.ee_pose)
-
-            # Display reward if non-zero
+            # Log step info
+            logger.info(f"Step {timestep:3d} | Action: {action.trajectory[0][:3]} (pos) {action.trajectory[0][6]:.2f} (grip)")
             if reward > 0:
                 logger.info(f"        | Reward: {reward:.2f} ✓")
 
-            # Render if GUI enabled
-            if enable_gui:
-                env.render(mode='human')
+        # Reset visualization for new episode
+        if viz_manager:
+            viz_manager.reset()
 
-            # Check for episode termination
-            if step_count >= cfg.get("max_steps", 1000):
-                done = True
+        # Run episode using shared runner
+        result = runner.run_episode(
+            initial_obs=obs,
+            reset_env=False,  # Already reset above
+            reset_policy=True,
+            step_callback=step_callback,
+            render=enable_gui
+        )
 
-        # Save trajectory
+        # Save trajectory if needed
         if log_trajectory:
             traj_path = log_dir / f"episode_{episode:04d}.npz"
-            np.savez(
-                traj_path,
-                actions=np.array(trajectory_data["actions"]),
-                observations=np.array(trajectory_data["observations"]),
-                rewards=np.array(trajectory_data["rewards"]),
-                ee_poses=np.array(trajectory_data["ee_poses"]),
-                task=trajectory_data["task"]
-            )
+            result.trajectory_collector.save_to_npz(str(traj_path))
             logger.info(f"Saved trajectory to {traj_path}")
 
-        # Check success
-        if info.get("success", False):
+        # Visualize episode if visualization is enabled
+        # Note: Camera and PyBullet rendering happen during the episode via callbacks
+        # This is for post-episode visualizations like reference plots
+        if viz_manager and viz_manager.config.reference_plot:
+            # If steering is active and has reference trajectory, visualize it
+            if steering is not None and hasattr(steering, 'reference_trajectory'):
+                if steering.reference_trajectory is not None:
+                    viz_manager.visualize_reference_trajectory(
+                        steering.reference_trajectory,
+                        task_name=env._task_name,
+                        horizon=cfg.policy.get('pred_horizon', 16)
+                    )
+
+        # Update counters and log results
+        if result.success:
             success_count += 1
-            logger.info(f"✓ Episode {episode + 1} SUCCEEDED (reward: {episode_reward:.2f}, steps: {step_count})")
+            logger.info(f"✓ Episode {episode + 1} SUCCEEDED (reward: {result.episode_reward:.2f}, steps: {result.episode_length})")
         else:
-            logger.info(f"✗ Episode {episode + 1} FAILED (reward: {episode_reward:.2f}, steps: {step_count})")
+            logger.info(f"✗ Episode {episode + 1} FAILED (reward: {result.episode_reward:.2f}, steps: {result.episode_length})")
 
     # Log final results
     success_rate = success_count / num_episodes

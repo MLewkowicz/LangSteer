@@ -21,4 +21,4 @@ max_steps: 360      # Maximum steps per episode
 render_mode: null   # Render mode: null, "rgb_array", or "human"
 
 # Task-specific reset
-use_task_initial_condition: false  # Enable task-specific scene state reset
+use_task_initial_condition: true  # Enable task-specific scene state reset (required for proper task evaluation)

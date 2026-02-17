@@ -1,0 +1,10 @@
+# Configuration for reference trajectory rollout visualization
+
+# Playback settings
+frame_skip: 1  # Play every Nth frame (1 = all frames, 2 = every other frame, etc.)
+playback_speed: 1.0  # Speed multiplier (1.0 = normal, 2.0 = 2x speed, 0.5 = half speed)
+
+# Video recording (optional)
+record_video: false
+video_path: "outputs/rollouts"
+video_fps: 30

@@ -1,0 +1,20 @@
+# Tweedie Steering Configuration
+# Uses Tweedie's formula to guide diffusion policy toward reference trajectories
+
+name: tweedie
+enabled: true
+
+# Guidance parameters
+guidance_strength: 1.0  # Scale factor for guidance gradient (tune this for stronger/weaker guidance)
+horizon: ${policy.pred_horizon}  # Prediction horizon (automatically matches policy)
+
+# Prediction type (must match policy scheduler)
+prediction_type: ${policy.scheduler.prediction_type}  # "sample", "epsilon", or "v_prediction"
+
+# Timestep-dependent scaling
+use_timestep_scaling: true  # Toggle between annealing and constant scaling
+min_timestep_scale: 0.1  # Minimum scale at early timesteps (only used if use_timestep_scaling=true)
+                         # Linearly anneals from min_timestep_scale to 1.0 over diffusion steps
+
+# Device
+device: ${policy.device}  # Automatically matches policy device (cuda/cpu)

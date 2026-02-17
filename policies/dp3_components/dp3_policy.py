@@ -224,7 +224,7 @@ class DP3(DP3BasePolicy):
 
             # 2.5 Apply steering guidance (if provided)
             if guidance_fn is not None:
-                guidance = guidance_fn(trajectory, t, global_cond)
+                guidance = guidance_fn(trajectory, t, global_cond, model_output)
                 model_output = model_output + guidance
 
             # 3. Compute previous sample: x_t -> x_t-1

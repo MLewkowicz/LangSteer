@@ -3,6 +3,8 @@ defaults:
   - env: calvin
   - policy: dp3
   - steering: none
+  - rollout: default
+  - visualization: base  # Unified visualization config
   - experiment: null
   - training: null  # Optional: specify training config for training mode
 
@@ -12,3 +14,6 @@ hydra:
 
 seed: 42
 device: "cuda"
+
+# Experiment options
+use_reference_init: false  # Use reference trajectory initial conditions even without steering (for fair comparison)

@@ -1,0 +1,60 @@
+# @package _global_
+# Base visualization configuration
+#
+# This unified config replaces the need for 4 separate visualization scripts:
+# - rollout_reference.py → visualization.render=true
+# - visualize_cameras.py → visualization.cameras=true
+# - visualize_trajectories.py → visualization.trajectory_3d=true
+# - visualize_reference.py → visualization.reference_plot=true
+
+visualization:
+  # Main visualization mode toggles
+  render: false              # PyBullet GUI rendering (from rollout_reference.py)
+  cameras: false             # Camera feed visualization (from visualize_cameras.py)
+  trajectory_3d: false       # Multi-rollout 3D trajectory analysis (from visualize_trajectories.py)
+  reference_plot: false      # Reference trajectory matplotlib plots (from visualize_reference.py)
+
+  # Camera visualization options
+  camera:
+    save_dir: "outputs/cameras"
+    display_mode: "side_by_side"  # "side_by_side" or "overlay"
+    save_images: true
+    show_live: false
+
+  # 3D trajectory visualization options (multi-rollout analysis)
+  trajectory:
+    num_rollouts: 10
+    max_steps: 50
+    save_dir: "outputs/trajectory_viz/${now:%Y%m%d_%H%M%S}"
+    modes:
+      - scatter
+      - lines
+    plot_options:
+      point_size: 3
+      line_width: 2
+      opacity: 0.7
+      colormap: "tab10"
+    snapshot_load_path: null
+    snapshot_save_path: "outputs/snapshots/${now:%Y%m%d_%H%M%S}_initial.npz"
+    snapshot_auto_save: true
+
+  # Reference trajectory visualization options (matplotlib)
+  reference:
+    save_dir: "outputs/reference_viz"
+    show_windows: true
+    plot_full_trajectory: true
+    plot_sliding_windows: true
+    window_timesteps: [0, 10, 20, 30]
+
+  # PyBullet rollout playback options
+  rollout:
+    frame_skip: 1
+    playback_speed: 1.0
+    keep_gui_open: true
+
+  # Video recording options (future feature)
+  video:
+    enabled: false
+    save_path: "outputs/videos"
+    fps: 30
+    codec: "mp4v"

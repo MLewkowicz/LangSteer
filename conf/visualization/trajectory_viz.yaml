@@ -1,0 +1,47 @@
+# @package _global_
+# Trajectory Visualization Configuration
+
+# Inherit base configurations
+defaults:
+  - /policy: dp3
+  - /env: calvin
+  - /steering: none
+
+# Visualization-specific settings
+visualization:
+  # Rollout parameters
+  num_rollouts: 10              # Number of rollouts from same initial state
+  max_steps: 50                 # Maximum steps per rollout
+
+  # Snapshot management
+  load_snapshot: null           # Path to .npz snapshot file (null = create new)
+  save_snapshot: true           # Whether to save the initial snapshot
+  snapshot_path: "outputs/snapshots/${now:%Y%m%d_%H%M%S}_initial.npz"
+
+  # Output settings
+  save_dir: "outputs/trajectory_viz/${now:%Y%m%d_%H%M%S}"
+
+  # Visualization modes to generate
+  modes:
+    - scatter                   # 3D scatter plot of all positions
+    - lines                     # 3D line plot showing continuous paths
+    # - combined                # Combined scatter + lines
+    # - success_comparison      # Color-coded by success/failure
+
+  # Plot styling options
+  plot_options:
+    point_size: 3               # Marker size for scatter plots
+    line_width: 2               # Line width for trajectory paths
+    opacity: 0.7                # Transparency (0-1)
+    colormap: "tab10"           # Matplotlib colormap for rollout colors
+
+# Override environment settings for faster rollouts
+env:
+  use_gui: false                # Headless mode for batch processing
+  max_steps: 50                 # Max steps per episode (should match visualization.max_steps)
+
+# Policy checkpoint path is inherited from /policy: dp3
+# Override via CLI if needed: policy.ckpt_path=/path/to/checkpoint.ckpt
+
+# Random seed for reproducibility
+seed: 42

@@ -24,9 +24,9 @@ from forecasters.trajectory_forecaster import TrajectoryForecaster
 from policies.dp3_components.encoder import DP3Encoder
 from policies.dp3_components.normalizer import LinearNormalizer
 from diffusers import DDIMScheduler
-from training.calvin_dataset import CalvinDataset
-from training.checkpoint_util import TopKCheckpointManager
-from training.ema_model import EMAModel
+from training.policies.dp3.dataset import CalvinDataset
+from training.common.checkpoint_util import TopKCheckpointManager
+from training.common.ema_model import EMAModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -554,7 +554,7 @@ class ForecasterTrainingWorkspace:
         logger.info(f"Saved checkpoint: epoch={epoch}, val_loss={val_loss:.4f}")
 
 
-@hydra.main(version_base=None, config_path="../conf/forecaster", config_name="trajectory_forecaster_debug")
+@hydra.main(version_base=None, config_path="../conf/forecaster", config_name="default")
 def main(cfg: DictConfig):
     """Main entry point."""
     workspace = ForecasterTrainingWorkspace(cfg)

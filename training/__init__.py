@@ -1,24 +1,41 @@
-"""Training infrastructure for LangSteer policies.
+"""Training infrastructure for LangSteer.
 
-This module contains training-specific code extracted from 3D-Diffusion-Policy
-and adapted for LangSteer's architecture. It provides dataset loaders, training
-loops, checkpoint management, and other utilities needed for training diffusion
-policies on manipulation datasets.
+Organized by model type:
+- training/common/ - Shared utilities (EMA, checkpointing, sampling, etc.)
+- training/policies/dp3/ - DP3 policy training
+- training/forecasters/trajectory/ - Trajectory forecaster training
 
-Key components:
-- dp3_trainer: Main training workspace for DP3
-- calvin_dataset: PyTorch Dataset for CALVIN manipulation data (Zarr format)
-- replay_buffer: Zarr-based replay buffer for efficient data loading
-- sampler: Sequence sampling utilities for temporal batching
-- checkpoint_util: TopK checkpoint management
-- ema_model: Exponential Moving Average for stable training
+Future models should follow this pattern:
+- training/policies/<model_name>/
+- training/forecasters/<forecaster_type>/
 """
 
+# Re-export commonly used components for backward compatibility
+from .common import (
+    EMAModel,
+    TopKCheckpointManager,
+    dict_apply,
+    SequenceSampler
+)
+
+from .policies.dp3 import (
+    DP3TrainingWorkspace,
+    CalvinDataset,
+    ReplayBuffer
+)
+
+from .forecasters.trajectory import ForecasterTrainingWorkspace
+
 __all__ = [
+    # Common utilities
+    'EMAModel',
+    'TopKCheckpointManager',
+    'dict_apply',
+    'SequenceSampler',
+    # DP3 training
     'DP3TrainingWorkspace',
     'CalvinDataset',
     'ReplayBuffer',
-    'SequenceSampler',
-    'TopKCheckpointManager',
-    'EMAModel',
+    # Forecaster training
+    'ForecasterTrainingWorkspace',
 ]
