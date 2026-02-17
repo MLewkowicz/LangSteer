@@ -240,17 +240,23 @@ def process_calvin_frame(env, rgb_static, rgb_gripper, depth_static, depth_gripp
 def make_env(dataset_path, split):
     val_folder = Path(dataset_path) / split
 
-    # Patch 1: Remove tactile camera to avoid urdfpy/np.float incompatibility with NumPy 2.0
+    # Patch 1: Fix CALVIN config for pip-installed package
     from omegaconf import OmegaConf
+    import calvin_env as _calvin_env_mod
     config_path = val_folder / '.hydra' / 'merged_config.yaml'
     if config_path.exists():
         config = OmegaConf.load(config_path)
+        # 1a: Remove tactile camera (urdfpy/np.float incompatibility with NumPy 2.0)
         if 'env' in config and 'cameras' in config.env and 'tactile' in config.env.cameras:
             del config.env.cameras['tactile']
-            config_backup = val_folder / '.hydra' / 'merged_config_original.yaml'
-            if not config_backup.exists():
-                shutil.copy(config_path, config_backup)
-            OmegaConf.save(config, config_path)
+        # 1b: Fix data_path — pip-installed calvin_env resolves REPO_BASE incorrectly
+        # play_table_scene.py uses Path(__file__).parents[2] which goes to site-packages/
+        # instead of site-packages/calvin_env/. Absolute path bypasses this.
+        config.data_path = str(Path(_calvin_env_mod.__file__).parent / 'data')
+        config_backup = val_folder / '.hydra' / 'merged_config_original.yaml'
+        if not config_backup.exists():
+            shutil.copy(config_path, config_backup)
+        OmegaConf.save(config, config_path)
 
     # Patch 2: Monkey-patch Robot.load() to add PyBullet URDF search path
     from calvin_env.robot.robot import Robot
