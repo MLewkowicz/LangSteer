@@ -239,10 +239,9 @@ def process_calvin_frame(env, rgb_static, rgb_gripper, depth_static, depth_gripp
 
 def make_env(dataset_path, split):
     val_folder = Path(dataset_path) / split
-    # Remove tactile camera to avoid urdfpy np.float incompatibility with NumPy 2.0
-    # (same fix applied in envs/calvin_utils/gym_wrapper.py)
+
+    # Patch 1: Remove tactile camera to avoid urdfpy/np.float incompatibility with NumPy 2.0
     from omegaconf import OmegaConf
-    import shutil
     config_path = val_folder / '.hydra' / 'merged_config.yaml'
     if config_path.exists():
         config = OmegaConf.load(config_path)
@@ -252,6 +251,19 @@ def make_env(dataset_path, split):
             if not config_backup.exists():
                 shutil.copy(config_path, config_backup)
             OmegaConf.save(config, config_path)
+
+    # Patch 2: Monkey-patch Robot.load() to add PyBullet URDF search path
+    from calvin_env.robot.robot import Robot
+    import pybullet_data
+    original_load = Robot.load
+    def patched_load(self):
+        try:
+            p.setAdditionalSearchPath(pybullet_data.getDataPath(), physicsClientId=self.cid)
+        except Exception:
+            pass
+        return original_load(self)
+    Robot.load = patched_load
+
     return get_env(val_folder, show_gui=False)
 
 def convert_calvin_to_dp3(root_dir, save_path, split=None, tasks=None, use_cuda=False, overwrite=False, process_both_splits=True, visualize_samples=False, visualize_every_n=100, visualize_save_dir=None):
