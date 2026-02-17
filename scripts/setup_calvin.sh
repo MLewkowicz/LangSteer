@@ -33,6 +33,7 @@ if [ ! -d "$CALVIN_PKG/data/franka_panda" ]; then
     echo "  Data files not bundled in pip package. Cloning repo to get them..."
     TMP_DIR=$(mktemp -d)
     git clone --depth=1 https://github.com/mees/calvin_env.git "$TMP_DIR"
+    mkdir -p "$CALVIN_PKG/data"
     cp -r "$TMP_DIR/data/"* "$CALVIN_PKG/data/"
     rm -rf "$TMP_DIR"
     echo "  ✓ CALVIN data files installed"
