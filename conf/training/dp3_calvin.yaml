@@ -2,10 +2,12 @@
 # Full training configuration for production runs on SLURM cluster
 
 # Dataset Configuration
+# For single-task training: convert with --tasks open_drawer (or other task), then set
+# zarr_path to that Zarr and optionally set max_train_episodes to subsample trajectories.
 dataset:
   zarr_path: "${oc.env:CALVIN_ZARR_PATH,/path/to/calvin_training.zarr}"
   val_ratio: 0.1  # 10% for validation
-  max_train_episodes: null  # Use all episodes (set to int to limit)
+  max_train_episodes: null  # Use all episodes; set to int to subsample (e.g. 500)
 
 # Policy Architecture (inherits from policy/dp3.yaml structure)
 policy:

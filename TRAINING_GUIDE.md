@@ -97,6 +97,29 @@ python scripts/train_dp3.py training=dp3_calvin \
     training.learning_rate=5e-5
 ```
 
+### Training on a Single Task (Subsample)
+
+To train on one task (e.g. `open_drawer`) and optionally use only a subsample of its trajectories:
+
+1. **Convert with a task filter** so the Zarr contains only that task’s episodes:
+
+```bash
+python scripts/convert_calvin_to_zarr.py \
+    --root_dir /path/to/calvin_dataset \
+    --save_path data/calvin_open_drawer.zarr \
+    --tasks open_drawer \
+    --overwrite
+```
+
+2. **Point training at that Zarr** and optionally cap the number of training episodes (subsample):
+
+```bash
+export CALVIN_ZARR_PATH=data/calvin_open_drawer.zarr
+python scripts/train_dp3.py training=dp3_calvin dataset.max_train_episodes=500
+```
+
+Or set `dataset.max_train_episodes` in a config (e.g. in `dp3_debug.yaml` it is already set to 100). Use `null` to use all episodes in the Zarr.
+
 ## Distributed Training Details
 
 ### SLURM Environment

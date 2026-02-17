@@ -9,6 +9,9 @@ dependencies = [
     "numpy>=2.2.6",
     "torch>=2.10.0",
     "calvin-env @ git+https://github.com/mees/calvin_env.git",
+    "zarr>=2.18.3",
+    "tqdm>=4.67.3",
+    "termcolor>=3.3.0",
 ]
 
 [dependency-groups]
