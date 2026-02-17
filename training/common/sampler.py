@@ -1,7 +1,7 @@
 from typing import Optional
 import numpy as np
 import numba
-from training.policies.dp3.replay_buffer import ReplayBuffer
+from training.common.replay_buffer import ReplayBuffer
 
 
 @numba.jit(nopython=True)

@@ -9,7 +9,7 @@ import torch
 import numpy as np
 import copy
 from training.common.pytorch_util import dict_apply
-from training.policies.dp3.replay_buffer import ReplayBuffer
+from training.common.replay_buffer import ReplayBuffer
 from training.common.sampler import (
     SequenceSampler, get_val_mask, downsample_mask)
 from policies.dp3_components.normalizer import LinearNormalizer, SingleFieldLinearNormalizer
