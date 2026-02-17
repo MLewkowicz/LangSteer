@@ -30,14 +30,12 @@ echo "  PyBullet data: $PYBULLET_DATA"
 echo ""
 echo "[3/4] Checking CALVIN data files..."
 if [ ! -d "$CALVIN_PKG/data/franka_panda" ]; then
-    echo "  ERROR: CALVIN data files not found in installed package!"
-    echo "  Expected location: $CALVIN_PKG/data/franka_panda"
-    echo ""
-    echo "  The calvin-env package should include data files."
-    echo "  If this fails, you may need to manually clone calvin_env and copy data files:"
-    echo "    git clone https://github.com/mees/calvin_env.git /tmp/calvin_env_tmp"
-    echo "    cp -r /tmp/calvin_env_tmp/data/* $CALVIN_PKG/data/"
-    exit 1
+    echo "  Data files not bundled in pip package. Cloning repo to get them..."
+    TMP_DIR=$(mktemp -d)
+    git clone --depth=1 https://github.com/mees/calvin_env.git "$TMP_DIR"
+    cp -r "$TMP_DIR/data/"* "$CALVIN_PKG/data/"
+    rm -rf "$TMP_DIR"
+    echo "  ✓ CALVIN data files installed"
 else
     echo "  ✓ CALVIN data files found"
 fi
