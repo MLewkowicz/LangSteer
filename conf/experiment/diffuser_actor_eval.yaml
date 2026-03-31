@@ -1,0 +1,33 @@
+# 3D Diffuser Actor + CALVIN Inference Experiment Configuration
+# Usage:
+#   uv run python scripts/run_experiment.py policy=diffuser_actor \
+#     env.provide_pcd_images=true env.use_gui=true env.task=open_drawer
+#
+# Note: env group values (provide_pcd_images, use_gui) must be passed as CLI
+# overrides since Hydra config groups take priority over experiment inline values.
+
+# @package _global_
+
+# Experiment metadata
+experiment_name: "diffuser_actor_calvin_eval"
+num_episodes: 1
+seed: 100
+
+# Environment overrides
+env:
+  task: "open_drawer"
+  dataset_path: "${oc.env:CALVIN_DATASET_PATH,/home/mlewkowicz/calvin/dataset/task_D_D}"
+  lang_ann_path: "${oc.env:CALVIN_DATASET_PATH,/home/mlewkowicz/calvin/dataset/task_D_D}/validation/lang_annotations/auto_lang_ann.npy"
+  use_gui: true
+  provide_pcd_images: true
+  use_task_initial_condition: true
+  max_steps: 360
+
+# Visualization & Logging
+enable_gui: true
+log_trajectory: true
+log_dir: "outputs/${experiment_name}/trajectories"
+
+# Logging
+logging:
+  level: "INFO"

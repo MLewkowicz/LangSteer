@@ -26,6 +26,11 @@ dependencies = [
     "numcodecs>=0.12.0",
     "scipy>=1.12.0",
     "tqdm>=4.65.0",
+    "clip",
+    "anthropic>=0.84.0",
+    "openai>=2.27.0",
+    "blosc>=1.11.4",
+    "wandb>=0.25.1",
 ]
 
 [dependency-groups]
@@ -41,9 +46,14 @@ diffusion = [
     "diffusers>=0.21.0",
 ]
 
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [tool.setuptools.packages.find]
-include = ["core*", "envs*", "policies*", "steering*", "scripts*"]
-exclude = ["calvin*", "3D-Diffusion-Policy*", "conf*", "training*"]
+include = ["core*", "envs*", "policies*", "steering*", "training*", "forecasters*", "utils*", "visualization*"]
+exclude = ["calvin*", "3D-Diffusion-Policy*", "3d_diffuser_actor*", "conf*"]
 
 [tool.uv.sources]
 pyopengl = { git = "https://github.com/mmatl/pyopengl.git", rev = "76d1261adee2d3fd99b418e75b0416bb7d2865e6" }
+clip = { git = "https://github.com/openai/CLIP.git" }

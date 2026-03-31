@@ -5,9 +5,10 @@ standardized point clouds and robot state.
 """
 
 import logging
-from typing import Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,42 @@ def deproject_depth(depth: np.ndarray, intrinsics: Dict) -> np.ndarray:
     points_3d = points_3d[valid_mask]
 
     return points_3d
+
+
+def deproject_depth_with_colors(
+    depth: np.ndarray, rgb: np.ndarray, intrinsics: Dict,
+    min_depth: float = 0.01, max_depth: float = 2.0,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Deproject depth to 3D points and extract per-point RGB colors.
+
+    Args:
+        depth: (H, W) depth image in meters
+        rgb: (H, W, 3) uint8 RGB image
+        intrinsics: Dictionary with fx, fy, cx, cy
+        min_depth: Minimum valid depth
+        max_depth: Maximum valid depth
+
+    Returns:
+        points: (N, 3) camera-frame point cloud
+        colors: (N, 3) uint8 RGB per point
+    """
+    height, width = depth.shape
+    fx, fy = intrinsics['fx'], intrinsics['fy']
+    cx, cy = intrinsics['cx'], intrinsics['cy']
+
+    u = np.arange(width)
+    v = np.arange(height)
+    u, v = np.meshgrid(u, v)
+
+    z = depth
+    x = (u - cx) * z / fx
+    y = (v - cy) * z / fy
+
+    points_3d = np.stack([x, y, z], axis=-1).reshape(-1, 3)
+    colors_flat = rgb.reshape(-1, 3)
+
+    valid = (points_3d[:, 2] > min_depth) & (points_3d[:, 2] < max_depth)
+    return points_3d[valid], colors_flat[valid]
 
 
 def process_calvin_obs(calvin_obs: Dict, num_points: int = 2048) -> Dict:
@@ -149,6 +186,88 @@ def process_calvin_obs(calvin_obs: Dict, num_points: int = 2048) -> Dict:
             'ee_pose': np.zeros(7, dtype=np.float32),
             'rgb_static': np.zeros((160, 160, 3), dtype=np.uint8),
         }
+
+
+def prepare_visual_states(calvin_obs: Dict, cameras: List) -> Dict:
+    """Prepare per-pixel PCD images for both cameras (for 3D Diffuser Actor).
+
+    Adapted from 3d_diffuser_actor/online_evaluation_calvin/evaluate_utils.py.
+
+    Args:
+        calvin_obs: Raw CALVIN observation dict
+        cameras: List of CALVIN camera objects [static_cam, gripper_cam]
+
+    Returns:
+        Dict with rgb_static, rgb_gripper (float [0,1] same size),
+        pcd_static, pcd_gripper (H,W,3 world-space XYZ same size),
+        plus robot_obs and ee_pose.
+    """
+    from training.policies.diffuser_actor.preprocessing.calvin_utils import (
+        deproject,
+        get_gripper_camera_view_matrix,
+    )
+
+    rgb_obs = calvin_obs.get('rgb_obs', {})
+    depth_obs = calvin_obs.get('depth_obs', {})
+    robot_obs = calvin_obs.get('robot_obs', np.zeros(15))
+
+    rgb_static = rgb_obs.get('rgb_static', np.zeros((200, 200, 3), dtype=np.uint8))
+    rgb_gripper = rgb_obs.get('rgb_gripper', np.zeros((84, 84, 3), dtype=np.uint8))
+    depth_static = depth_obs.get('depth_static', np.zeros((200, 200)))
+    depth_gripper = depth_obs.get('depth_gripper', np.zeros((84, 84)))
+
+    static_cam = cameras[0]
+    gripper_cam = cameras[1]
+
+    # Update gripper camera view matrix (dynamic — mounted on robot arm)
+    gripper_cam.viewMatrix = get_gripper_camera_view_matrix(gripper_cam)
+
+    # Deproject depth to per-pixel world-space XYZ
+    # deproject returns (3, N), reshape to (H, W, 3)
+    static_pcd = deproject(
+        static_cam, depth_static, homogeneous=False, sanity_check=False
+    ).transpose(1, 0)
+    static_pcd = np.reshape(
+        static_pcd, (depth_static.shape[0], depth_static.shape[1], 3)
+    )
+
+    gripper_pcd = deproject(
+        gripper_cam, depth_gripper, homogeneous=False, sanity_check=False
+    ).transpose(1, 0)
+    gripper_pcd = np.reshape(
+        gripper_pcd, (depth_gripper.shape[0], depth_gripper.shape[1], 3)
+    )
+
+    # Normalize RGB to [0, 1]
+    rgb_static_f = rgb_static.astype(np.float32) / 255.0
+    rgb_gripper_f = rgb_gripper.astype(np.float32) / 255.0
+
+    # Resize gripper images to match static camera resolution
+    h, w = rgb_static_f.shape[:2]
+    rgb_gripper_f = F.interpolate(
+        torch.as_tensor(rgb_gripper_f).permute(2, 0, 1).unsqueeze(0),
+        size=(h, w), mode='bilinear', align_corners=False
+    ).squeeze(0).permute(1, 2, 0).numpy()
+
+    gripper_pcd = F.interpolate(
+        torch.as_tensor(gripper_pcd).permute(2, 0, 1).unsqueeze(0),
+        size=(h, w), mode='nearest'
+    ).squeeze(0).permute(1, 2, 0).numpy()
+
+    # Extract ee_pose
+    tcp_pos = robot_obs[:3]
+    tcp_orient = robot_obs[3:6]
+    gripper_width = robot_obs[6:7]
+    ee_pose = np.concatenate([tcp_pos, tcp_orient, gripper_width])
+
+    return {
+        'rgb_static': rgb_static_f,    # (H, W, 3) float [0, 1]
+        'rgb_gripper': rgb_gripper_f,   # (H, W, 3) float [0, 1], resized
+        'pcd_static': static_pcd.astype(np.float32),    # (H, W, 3) world XYZ
+        'pcd_gripper': gripper_pcd.astype(np.float32),   # (H, W, 3) world XYZ, resized
+        'robot_obs': robot_obs.astype(np.float32),
+        'ee_pose': ee_pose.astype(np.float32),
+    }
 
 
 def sample_farthest_points_numpy(points: np.ndarray, K: int) -> np.ndarray:

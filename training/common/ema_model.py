@@ -4,7 +4,9 @@ from torch.nn.modules.batchnorm import _BatchNorm
 
 class EMAModel:
     """
-    Exponential Moving Average of models weights
+    Exponential Moving Average of models weights.
+
+    Keeps the averaged model on CPU to save GPU memory.
     """
 
     def __init__(
@@ -28,7 +30,8 @@ class EMAModel:
             min_value (float): The minimum EMA decay rate. Default: 0.
         """
 
-        self.averaged_model = model
+        self.averaged_model = copy.deepcopy(model)
+        self.averaged_model.to("cpu")
         self.averaged_model.eval()
         self.averaged_model.requires_grad_(False)
 
@@ -57,32 +60,21 @@ class EMAModel:
     def step(self, new_model):
         self.decay = self.get_decay(self.optimization_step)
 
-        # old_all_dataptrs = set()
-        # for param in new_model.parameters():
-        #     data_ptr = param.data_ptr()
-        #     if data_ptr != 0:
-        #         old_all_dataptrs.add(data_ptr)
-
-        all_dataptrs = set()
-        for module, ema_module in zip(new_model.modules(), self.averaged_model.modules()):            
+        for module, ema_module in zip(new_model.modules(), self.averaged_model.modules()):
             for param, ema_param in zip(module.parameters(recurse=False), ema_module.parameters(recurse=False)):
                 # iterative over immediate parameters only.
                 if isinstance(param, dict):
                     raise RuntimeError('Dict parameter not supported')
-                
-                # data_ptr = param.data_ptr()
-                # if data_ptr != 0:
-                #     all_dataptrs.add(data_ptr)
+
+                # Move training param to CPU for the update
+                param_cpu = param.data.to(device="cpu", dtype=ema_param.dtype)
 
                 if isinstance(module, _BatchNorm):
-                    # skip batchnorms
-                    ema_param.copy_(param.to(dtype=ema_param.dtype).data)
+                    ema_param.copy_(param_cpu)
                 elif not param.requires_grad:
-                    ema_param.copy_(param.to(dtype=ema_param.dtype).data)
+                    ema_param.copy_(param_cpu)
                 else:
                     ema_param.mul_(self.decay)
-                    ema_param.add_(param.data.to(dtype=ema_param.dtype), alpha=1 - self.decay)
+                    ema_param.add_(param_cpu, alpha=1 - self.decay)
 
-        # verify that iterating over module and then parameters is identical to parameters recursively.
-        # assert old_all_dataptrs == all_dataptrs
         self.optimization_step += 1

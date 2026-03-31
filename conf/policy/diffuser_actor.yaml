@@ -1,0 +1,43 @@
+# 3D Diffuser Actor Policy Configuration
+# Matches train_trajectory_calvin.sh training hyperparameters
+
+name: diffuser_actor
+
+# Checkpoint
+ckpt_path: "checkpoints/diffuser_actor_calvin.pth"
+device: "cuda"
+
+# Architecture (must match training exactly)
+backbone: clip
+image_size: [256, 256]
+embedding_dim: 192
+num_vis_ins_attn_layers: 2
+use_instruction: true
+fps_subsampling_factor: 3
+gripper_loc_bounds: [[-0.3021, -0.2569, -0.2156], [0.3613, 0.3377, 0.1837]]
+rotation_parametrization: "6D"
+quaternion_format: "wxyz"
+diffusion_timesteps: 25
+nhist: 3
+relative: true
+lang_enhanced: true
+
+# Inference
+pred_horizon: 20
+
+# Camera setup (CALVIN)
+cameras: ["static", "gripper"]
+
+# Image preprocessing
+# CALVIN images are 200x200; crop to 160x160 then feed directly (no resize)
+crop_images: true
+
+# Text encoder
+text_max_length: 16
+
+# Language masking (for unconditioned inference with steering)
+mask_language: false
+
+# MCMC Langevin corrector (used with steering)
+corrector_steps: 0       # 0 = disabled; 2-3 recommended with steering
+corrector_step_size: 0.001

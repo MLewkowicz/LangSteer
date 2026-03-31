@@ -357,26 +357,22 @@ def convert_calvin_to_dp3(root_dir, save_path, split=None, tasks=None, use_cuda=
     cprint("Saving Zarr...", "yellow")
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
-    # Use mode='w' and zarr_format=2 for compatibility
-    root = zarr.open_group(save_path, mode='w', zarr_format=2)
+    root = zarr.open_group(save_path, mode='w')
     data_g = root.create_group('data')
     meta_g = root.create_group('meta')
-    
+
     compressor = Blosc(cname='zstd', clevel=3, shuffle=1)
-    
+
     def save_arr(name, arr, dtype):
         arr_np = np.stack(arr, axis=0)
         cprint(f"Saving {name}: {arr_np.shape}", "green")
         chunks = (100,) + arr_np.shape[1:]
-        
-        # FIX: Explicit shape and compressors list
         data_g.create_dataset(
-            name, 
-            data=arr_np, 
-            shape=arr_np.shape, # Mandatory in Zarr v3
-            chunks=chunks, 
-            dtype=dtype, 
-            compressors=[compressor], # List required in Zarr v3
+            name,
+            data=arr_np,
+            chunks=chunks,
+            dtype=dtype,
+            compressor=compressor,
             overwrite=True
         )
         del arr_np
@@ -386,23 +382,20 @@ def convert_calvin_to_dp3(root_dir, save_path, split=None, tasks=None, use_cuda=
     save_arr('depth', depth_arrays, 'float64')
     save_arr('action', action_arrays, 'float32')
     save_arr('state', state_arrays, 'float32')
-    
-    # Save meta
+
     meta_g.create_dataset(
-        'episode_ends', 
-        data=np.array(episode_ends, dtype='int64'), 
-        shape=(len(episode_ends),), 
-        chunks=(100,), 
-        compressors=[compressor], 
+        'episode_ends',
+        data=np.array(episode_ends, dtype='int64'),
+        chunks=(100,),
+        compressor=compressor,
         overwrite=True
     )
-    
+
     if training_end_idx > 0:
         meta_g.create_dataset(
-            'training_episode_count', 
-            data=np.array([training_end_idx]), 
-            shape=(1,), 
-            dtype='int64', 
+            'training_episode_count',
+            data=np.array([training_end_idx]),
+            dtype='int64',
             overwrite=True
         )
                               

@@ -1,6 +1,7 @@
 """Main evaluation loop for running experiments."""
 
 import hydra
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from typing import Dict, Any
 import logging
@@ -60,6 +61,9 @@ def instantiate_steering(cfg: DictConfig) -> BaseSteering | None:
     elif steering_name == "tweedie":
         from steering.tweedie import TweedieSteering
         return TweedieSteering(OmegaConf.to_container(cfg.steering, resolve=True))
+    elif steering_name == "voxposer":
+        from steering.voxposer_steering import VoxPoserSteering
+        return VoxPoserSteering(OmegaConf.to_container(cfg.steering, resolve=True))
     else:
         raise ValueError(f"Unknown steering: {steering_name}")
 
@@ -87,6 +91,27 @@ def main(cfg: DictConfig) -> None:
     policy = instantiate_policy(cfg)
     steering = instantiate_steering(cfg)
 
+    # Log default annotation for this task
+    logger.info(f"Task: {env._task_name} → default annotation: '{env.task_description}'")
+
+    # Override policy instruction if provided via CLI
+    if cfg.get('instruction', None):
+        env._instruction = cfg.instruction
+        logger.info(f"Policy instruction override: '{cfg.instruction}'")
+
+    # VoxPoser: default visualization save dir to Hydra output dir when unset
+    if (cfg.steering.get('name') == 'voxposer'
+            and cfg.steering.get('visualize', False)
+            and not cfg.steering.get('visualization_save_dir', None)):
+        hydra_output_dir = HydraConfig.get().runtime.output_dir
+        steering._lmp_config['visualization_save_dir'] = hydra_output_dir
+        logger.info(f"VoxPoser visualizations will be saved to: {hydra_output_dir}")
+
+    # DiffuserActor requires per-pixel PCD images and gripper camera
+    if cfg.policy.name == "diffuser_actor" and not env._provide_pcd_images:
+        logger.info("Enabling provide_pcd_images (required by DiffuserActor)")
+        env._provide_pcd_images = True
+
     # Initialize visualization manager if enabled
     viz_manager = None
     if 'visualization' in cfg and OmegaConf.to_container(cfg.visualization, resolve=True):
@@ -97,9 +122,17 @@ def main(cfg: DictConfig) -> None:
 
     # Initialize steering with policy's scheduler and trajectory loader
     if steering is not None:
-        if hasattr(steering, 'set_scheduler'):
+        # Wire noise scheduler(s) to steering module
+        if cfg.policy.name == "dp3" and hasattr(steering, 'set_scheduler'):
             steering.set_scheduler(policy._dp3_model.noise_scheduler)
-            logger.info("Set scheduler reference for steering")
+            logger.info("Set DP3 scheduler reference for steering")
+        elif cfg.policy.name == "diffuser_actor":
+            if hasattr(steering, 'set_position_scheduler'):
+                steering.set_position_scheduler(policy._model.position_noise_scheduler)
+                logger.info("Set DiffuserActor position scheduler for steering")
+            if hasattr(steering, 'set_rotation_scheduler'):
+                steering.set_rotation_scheduler(policy._model.rotation_noise_scheduler)
+                logger.info("Set DiffuserActor rotation scheduler for steering")
 
         if hasattr(steering, 'set_trajectory_loader'):
             from utils.reference_trajectory_loader import ReferenceTrajectoryLoader
@@ -143,14 +176,36 @@ def main(cfg: DictConfig) -> None:
         use_reference_init = cfg.get('use_reference_init', False)
 
         if steering is not None and hasattr(steering, 'setup_episode'):
-            # Steering is active - use reference trajectory initial state
-            robot_obs, scene_obs = steering.setup_episode(env._task_name)
-
-            if robot_obs is not None and scene_obs is not None:
-                obs = env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
-                logger.info("Reset environment to reference trajectory starting state (steering active)")
-            else:
+            if cfg.steering.name == "voxposer":
+                # VoxPoser steering: reset env first, then generate value maps
+                # using the actual scene state
                 obs = env.reset()
+                # Get scene state from the environment for object detection
+                calvin_obs = env._gym_env._env.get_obs()
+                vp_robot_obs = calvin_obs.get('robot_obs', np.zeros(15))
+                vp_scene_obs = calvin_obs.get('scene_obs', np.zeros(24))
+                # steering.instruction overrides the instruction used for value maps
+                # (independent from the policy instruction in env.task_description)
+                vp_instruction = cfg.steering.get('instruction', None) or env.task_description
+                steering.setup_episode(
+                    env._task_name,
+                    instruction=vp_instruction,
+                    robot_obs=vp_robot_obs,
+                    scene_obs=vp_scene_obs,
+                )
+                if steering._value_map is not None:
+                    logger.info(f"Generated VoxPoser value maps for: '{vp_instruction}'")
+                else:
+                    logger.error(f"VoxPoser value map generation FAILED for: '{vp_instruction}'")
+            else:
+                # Tweedie/other steering: use reference trajectory initial state
+                robot_obs, scene_obs = steering.setup_episode(env._task_name)
+
+                if robot_obs is not None and scene_obs is not None:
+                    obs = env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
+                    logger.info("Reset environment to reference trajectory starting state (steering active)")
+                else:
+                    obs = env.reset()
         elif use_reference_init:
             # Steering is NOT active, but user wants to use reference initial conditions
             # Load reference trajectory just for initial state

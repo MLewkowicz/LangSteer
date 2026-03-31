@@ -15,5 +15,9 @@ hydra:
 seed: 42
 device: "cuda"
 
+# Language instruction override (applies to both steering and policy)
+# When null, uses the CALVIN annotation for env.task
+instruction: null
+
 # Experiment options
 use_reference_init: false  # Use reference trajectory initial conditions even without steering (for fair comparison)

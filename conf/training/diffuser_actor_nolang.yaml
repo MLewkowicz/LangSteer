@@ -1,0 +1,31 @@
+# 3D Diffuser Actor Training Configuration — No Language Conditioning
+# Inherits from diffuser_actor_calvin with language modules disabled.
+# This produces a structurally smaller model (no language attention layers).
+# Checkpoints are NOT compatible with language-conditioned models.
+
+defaults:
+  - diffuser_actor_calvin
+
+# Disable language conditioning
+policy:
+  use_instruction: false
+  lang_enhanced: false
+
+# Data paths (preprocessed with open_drawer + move_slider_left)
+# Scaled to dataset size (303 episodes vs ~20K+ in the original full CALVIN run).
+# original: 600K iters × batch 30 / ~20K episodes ≈ 900 passes through data
+# ours:      20K iters × batch 16 /   303 episodes ≈ 1,056 passes through data
+dataset:
+  train_path: "${oc.env:CALVIN_3DA_DATASET_PATH,/home/mlewkowicz/LangSteer/cache/diffuser_actor_data}/training"
+  val_path: "${oc.env:CALVIN_3DA_DATASET_PATH,/home/mlewkowicz/LangSteer/cache/diffuser_actor_data}/validation"
+  instructions_path: null
+  taskvar:
+    - ["D", 0]
+  interpolation_length: 20  # original used 20, not 100
+
+train_iters: 20000
+lr: 3.0e-4
+
+# Override checkpoint/experiment naming
+checkpoint_dir: "outputs/checkpoints/diffuser_actor_nolang"
+experiment_name: "diffuser_actor_nolang_${now:%Y%m%d_%H%M%S}"

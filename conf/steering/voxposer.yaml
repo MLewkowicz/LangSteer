@@ -1,0 +1,35 @@
+name: voxposer
+
+# Steering instruction override (null = use env.task_description or top-level instruction)
+# Set this to use a DIFFERENT instruction for value map generation than the policy sees.
+instruction: null
+
+# Guidance parameters
+guidance_strength: 1.0
+horizon: ${policy.pred_horizon}
+prediction_type: sample
+device: ${policy.device}
+
+# Timestep scaling
+use_timestep_scaling: true
+min_timestep_scale: 0.1
+
+# Voxel map settings
+map_size: 100
+
+# LLM settings (provider-agnostic: "anthropic" or "openai")
+llm_provider: openai 
+llm_model: gpt-4o
+llm_temperature: 0
+llm_max_tokens: 512
+cache_dir: cache/voxposer_llm
+load_cache: true
+
+# Workspace bounds (absolute world coords, meters)
+workspace_bounds_min: [-0.35, -0.40, 0.30]
+workspace_bounds_max: [0.35, 0.15, 0.85]
+
+# Visualization
+visualize: true
+visualization_quality: low
+visualization_save_dir: null  # defaults to Hydra output dir

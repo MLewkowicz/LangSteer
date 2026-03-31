@@ -298,11 +298,13 @@ class DP3TrainingWorkspace:
             if not self.is_main_process:
                 normalizer.load_state_dict(normalizer_state[0])
 
-        # Set normalizer in model
+        # Set normalizer in model (and move to device — custom _load_from_state_dict keeps CPU tensors)
         model_to_set = self.model.module if self.is_distributed else self.model
         model_to_set.set_normalizer(normalizer)
+        model_to_set.normalizer.to(self.device)
         if self.ema_model is not None:
             self.ema_model.averaged_model.set_normalizer(normalizer)
+            # EMA model lives on CPU — normalizer stays on CPU too
 
         # Setup checkpoint manager (only on rank 0)
         topk_manager = None
@@ -376,10 +378,11 @@ class DP3TrainingWorkspace:
                     import wandb
                     wandb.log(log_dict, step=self.global_step)
 
+                val_str = f"{val_loss:.4f}" if val_loss is not None else "N/A"
                 logger.info(
                     f"Epoch {epoch}/{cfg.num_epochs} | "
                     f"Train Loss: {train_loss:.4f} | "
-                    f"Val Loss: {val_loss:.4f if val_loss is not None else 'N/A'} | "
+                    f"Val Loss: {val_str} | "
                     f"LR: {self.optimizer.param_groups[0]['lr']:.2e}"
                 )
 
@@ -504,18 +507,23 @@ class DP3TrainingWorkspace:
         if self.ema_model is not None:
             checkpoint['ema_model_state_dict'] = self.ema_model.averaged_model.state_dict()
 
-        # Save checkpoint via TopK manager
-        save_path = Path(self.cfg.checkpoint_dir) / f"epoch_{epoch:04d}.ckpt"
-        torch.save(checkpoint, save_path)
-
-        # Update TopK
-        topk_manager.save_topk(save_path, metric, epoch)
-
-        # Also save as latest
-        latest_path = Path(self.cfg.checkpoint_dir) / "latest.ckpt"
+        # Always save as latest
+        checkpoint_dir = Path(self.cfg.checkpoint_dir)
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        latest_path = checkpoint_dir / "latest.ckpt"
         torch.save(checkpoint, latest_path)
 
-        logger.info(f"Checkpoint saved: {save_path}")
+        # Save TopK checkpoint if this metric qualifies
+        ckpt_path = topk_manager.get_ckpt_path({
+            'epoch': epoch,
+            'train_loss': metric,
+            'val_loss': metric,
+        })
+        if ckpt_path is not None:
+            torch.save(checkpoint, ckpt_path)
+            logger.info(f"TopK checkpoint saved: {ckpt_path}")
+
+        logger.info(f"Checkpoint saved: {latest_path}")
 
     def _load_checkpoint(self, checkpoint_path: Optional[str] = None):
         """Load checkpoint for resuming training."""
