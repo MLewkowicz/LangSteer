@@ -235,6 +235,10 @@ def main(cfg: DictConfig) -> None:
             if steering is not None and hasattr(steering, 'increment_step'):
                 steering.increment_step()
 
+            # Check stage transitions for multi-stage steering (proximity-based)
+            if steering is not None and hasattr(steering, 'check_stage_transition'):
+                steering.check_stage_transition(obs.ee_pose[:3])
+
             # Log step info
             logger.info(f"Step {timestep:3d} | Action: {action.trajectory[0][:3]} (pos) {action.trajectory[0][6]:.2f} (grip)")
             if reward > 0:

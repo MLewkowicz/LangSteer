@@ -29,7 +29,7 @@ SYSTEM_PROMPT = (
     "when given a new query. Follow the patterns in the context code. Be thorough "
     "and thoughtful. Do not include import statements. Do not repeat the query. "
     "Do not provide text explanations (comments in code are okay). "
-    "Note: x is left(-) to right(+), y is back(-) to front(+), z is bottom to top."
+    "Note: x is left(-) to right(+), y is front(-) to back(+), z is bottom to top."
 )
 
 

@@ -355,17 +355,25 @@ class DiffuserActorPolicy(BasePolicy):
                 1, self.pred_horizon, device=self._device
             )
 
-            # Build guidance function from steering module
+            # Build guidance function from steering module.
+            # 'epsilon' mode: modify ε before the scheduler step (guidance_fn).
+            # 'dps' mode: correct x_{t-1} after the scheduler step (dps_guidance_fn).
             guidance_fn = None
+            dps_guidance_fn = None
             if steering is not None:
                 # Provide current gripper position for relative coordinate conversion
                 if hasattr(steering, 'set_current_gripper_pos'):
                     steering.set_current_gripper_pos(obs.ee_pose[:3])
 
-                def guidance_fn(trajectory, timestep, fixed_inputs, model_output):
+                def _steering_fn(trajectory, timestep, fixed_inputs, model_output):
                     return steering.get_guidance(
                         trajectory, timestep, fixed_inputs, model_output
                     )
+
+                if getattr(steering, 'guidance_mode', 'epsilon') == 'dps':
+                    dps_guidance_fn = _steering_fn
+                else:
+                    guidance_fn = _steering_fn
 
             # Run inference
             trajectory = self._model(
@@ -378,6 +386,7 @@ class DiffuserActorPolicy(BasePolicy):
                 run_inference=True,
                 mask_language=self._mask_language,
                 guidance_fn=guidance_fn,
+                dps_guidance_fn=dps_guidance_fn,
                 corrector_steps=self._corrector_steps,
                 corrector_step_size=self._corrector_step_size,
             )

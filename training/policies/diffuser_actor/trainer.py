@@ -393,13 +393,19 @@ class DiffuserActorTrainingWorkspace:
 
             self.global_step = step_id + 1
 
-            # Logging
-            if self.is_main_process and (step_id + 1) % cfg.get("val_freq", 500) == 0:
-                # Training loss
-                if self.use_wandb:
-                    import wandb
-                    wandb.log({"train/loss": loss.item(), "lr": cfg.lr}, step=step_id)
+            # Per-step loss logging (frequent)
+            if self.is_main_process and self.use_wandb and (step_id + 1) % cfg.get("log_freq", 10) == 0:
+                import wandb
+                wandb.log(
+                    {
+                        "train/loss": loss.item(),
+                        "lr": self.optimizer.param_groups[0]["lr"],
+                    },
+                    step=step_id,
+                )
 
+            # Val checkpoint (infrequent)
+            if self.is_main_process and (step_id + 1) % cfg.get("val_freq", 500) == 0:
                 # Validation
                 self.model.eval()
                 val_metrics = self._evaluate(val_loader, step_id)
@@ -408,6 +414,10 @@ class DiffuserActorTrainingWorkspace:
                 # Save checkpoint
                 val_loss = val_metrics.get("val/traj_pos_acc_001", None)
                 self._save_checkpoint(topk_manager, step_id, val_loss)
+
+                if self.use_wandb:
+                    import wandb
+                    wandb.log(val_metrics, step=step_id)
 
                 logger.info(
                     f"Step {step_id} | train_loss={loss.item():.4f} | "

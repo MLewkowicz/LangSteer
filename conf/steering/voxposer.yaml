@@ -7,12 +7,34 @@ instruction: null
 # Guidance parameters
 guidance_strength: 1.0
 horizon: ${policy.pred_horizon}
-prediction_type: sample
+# Must be 'epsilon' for DiffuserActor (which uses epsilon prediction)
+prediction_type: epsilon
 device: ${policy.device}
 
-# Timestep scaling
+# Guidance mode:
+#   'epsilon' — add gradient correction to ε before the scheduler step (no loop changes)
+#   'dps'     — apply correction to x_{t-1} after the scheduler step (DPS-style)
+guidance_mode: epsilon
+
+# Only apply guidance for timesteps <= this value.
+# Steps above this threshold are high-noise; Tweedie x_0 predictions are unreliable there.
+# E.g. with 100 total steps, set to 50 to guide only the lower-noise half.
+start_guidance_timestep: 50
+
+# Timestep scaling (soft ramp within the guided window)
 use_timestep_scaling: true
 min_timestep_scale: 0.1
+
+# DiffuserActor position normalization bounds (gripper_loc_bounds).
+# These are in gripper-relative space (same as policy.gripper_loc_bounds).
+# Required for correct world-space denormalization of predicted trajectories.
+gripper_loc_bounds: ${policy.gripper_loc_bounds}
+relative: ${policy.relative}
+
+# Multi-stage: proximity threshold (meters) for advancing to the next stage.
+# When the EE is within this distance of the current stage's affordance target,
+# the steering module switches to the next stage's cost map.
+stage_proximity_threshold: 0.05
 
 # Voxel map settings
 map_size: 100

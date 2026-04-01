@@ -45,6 +45,7 @@ accumulate_grad_batches: 1
 
 # Validation
 val_freq: 500  # Validate every N iterations
+log_freq: 10   # Log train/loss to WandB every N steps
 
 # EMA (Exponential Moving Average)
 use_ema: true

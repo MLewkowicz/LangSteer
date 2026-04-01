@@ -147,8 +147,8 @@ class DiffuserActor(nn.Module):
         )
 
     def conditional_sample(self, condition_data, condition_mask, fixed_inputs,
-                           guidance_fn=None, corrector_steps=0,
-                           corrector_step_size=1e-3):
+                           guidance_fn=None, dps_guidance_fn=None,
+                           corrector_steps=0, corrector_step_size=1e-3):
         self.position_noise_scheduler.set_timesteps(self.n_steps)
         self.rotation_noise_scheduler.set_timesteps(self.n_steps)
 
@@ -178,12 +178,16 @@ class DiffuserActor(nn.Module):
         for t in timesteps:
             t_batch = t * torch.ones(len(trajectory)).to(trajectory.device).long()
 
+            # Save x_t before denoising (needed for DPS guidance, which uses
+            # x_t and ε to compute Tweedie x_0, then corrects x_{t-1})
+            x_t = trajectory
+
             out = self.policy_forward_pass(
                 trajectory, t_batch, fixed_inputs
             )
             out = out[-1]  # keep only last layer's output
 
-            # Apply guidance to epsilon prediction (DPS-style)
+            # Epsilon-mode guidance: modify ε before scheduler step
             if guidance_fn is not None:
                 guidance = guidance_fn(trajectory, t, fixed_inputs, out)
                 out = out + guidance
@@ -196,6 +200,14 @@ class DiffuserActor(nn.Module):
                 out[..., 3:9], t, trajectory[..., 3:9]
             ).prev_sample
             trajectory = torch.cat((pos, rot), -1)
+
+            # DPS-mode guidance: correct x_{t-1} after scheduler step.
+            # Passes x_t (not x_{t-1}) and ε so the steering module can apply
+            # Tweedie's formula correctly; the returned correction is added to
+            # x_{t-1} (trajectory) in model-internal position space.
+            if dps_guidance_fn is not None:
+                correction = dps_guidance_fn(x_t, t, fixed_inputs, out)
+                trajectory = trajectory + correction
 
             # MCMC Langevin corrector: re-score and refine at current noise level
             if corrector_steps > 0 and t > 0:
@@ -242,6 +254,7 @@ class DiffuserActor(nn.Module):
         instruction=None,
         mask_language=False,
         guidance_fn=None,
+        dps_guidance_fn=None,
         corrector_steps=0,
         corrector_step_size=1e-3
     ):
@@ -276,6 +289,7 @@ class DiffuserActor(nn.Module):
             cond_mask,
             fixed_inputs,
             guidance_fn=guidance_fn,
+            dps_guidance_fn=dps_guidance_fn,
             corrector_steps=corrector_steps,
             corrector_step_size=corrector_step_size
         )
@@ -364,6 +378,7 @@ class DiffuserActor(nn.Module):
         run_inference=False,
         mask_language=False,
         guidance_fn=None,
+        dps_guidance_fn=None,
         corrector_steps=0,
         corrector_step_size=1e-3
     ):
@@ -402,6 +417,7 @@ class DiffuserActor(nn.Module):
                 instruction=instruction,
                 mask_language=mask_language,
                 guidance_fn=guidance_fn,
+                dps_guidance_fn=dps_guidance_fn,
                 corrector_steps=corrector_steps,
                 corrector_step_size=corrector_step_size,
             )
