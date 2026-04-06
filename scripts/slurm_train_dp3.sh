@@ -1,43 +1,43 @@
 #!/bin/bash
 #SBATCH --job-name=dp3_calvin
-#SBATCH --output=logs/dp3_%j.out
-#SBATCH --error=logs/dp3_%j.err
+#SBATCH --output=logs/%j_dp3.out
+#SBATCH --error=logs/%j_dp3.err
+#SBATCH --partition=clear-l40s
+#SBATCH --account=clear
+#SBATCH --qos=clear-main
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4  # Number of GPUs per node
+#SBATCH --ntasks-per-node=4
+#SBATCH --gres=gpu:4
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:4  # Request 4 GPUs
-#SBATCH --time=48:00:00
-#SBATCH --mem=200G
-#SBATCH --partition=gpu
+#SBATCH --mem=128G
+#SBATCH --time=24:00:00
 
-# SLURM Training Script for DP3 on CALVIN
-# Launches distributed training across multiple GPUs
+# =============================================================================
+# DP3 DDP training on SLURM (4 GPUs, 1 node)
+# Submit from repo root: sbatch scripts/slurm_train_dp3.sh
+# =============================================================================
 
-# Environment setup
-module load cuda/11.8  # Adjust based on your cluster
-module load python/3.10  # Adjust based on your cluster
+# Environment setup (uv-managed venv)
+cd "$SLURM_SUBMIT_DIR"
+source .venv/bin/activate
 
-# Activate virtual environment
-source ~/.venv/langsteer/bin/activate  # Adjust to your venv path
+# Environment variables
+export CALVIN_ZARR_PATH="${CALVIN_ZARR_PATH:?Set CALVIN_ZARR_PATH before submitting}"
+export WANDB_MODE=online
+export OMP_NUM_THREADS=4
+export HYDRA_FULL_ERROR=1
 
-# Set environment variables
-export CALVIN_ZARR_PATH="/path/to/your/calvin_training.zarr"  # UPDATE THIS
-export MASTER_PORT=29500
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+# DDP master address and port
+export MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
+export MASTER_PORT=${MASTER_PORT:-29500}
 
 # Create logs directory
 mkdir -p logs
 
-# Print job info
-echo "Starting DP3 training on SLURM"
-echo "Job ID: $SLURM_JOB_ID"
-echo "Node: $SLURM_NODELIST"
-echo "Number of tasks: $SLURM_NTASKS"
-echo "GPUs per node: $SLURM_GPUS_ON_NODE"
-echo "Dataset: $CALVIN_ZARR_PATH"
+# Job info
+echo "Job ID: $SLURM_JOB_ID | Node: $SLURM_NODELIST | GPUs: $SLURM_NTASKS"
+echo "Master: $MASTER_ADDR:$MASTER_PORT | Dataset: $CALVIN_ZARR_PATH"
 
-# Launch training with srun (SLURM distributed launcher)
+# Launch DDP training
 srun python scripts/train_dp3.py training=dp3_calvin \
     training.experiment_name="dp3_calvin_slurm_${SLURM_JOB_ID}"
-
-echo "Training complete!"

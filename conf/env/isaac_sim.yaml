@@ -1,0 +1,35 @@
+# Isaac Sim Tabletop Environment Configuration
+
+name: isaac_sim
+
+# Task specification — must be registered in envs/isaac_sim_utils/task_configs.py
+task: null
+
+# Display
+use_gui: true
+
+# Observation settings
+num_points: 2048
+provide_pcd_images: false  # true for Diffuser Actor (per-pixel PCD images)
+
+# Episode settings
+max_steps: 360
+physics_steps_per_action: 10  # Sim steps per EE target command
+
+# Scene geometry
+table_size: [0.8, 1.0, 0.02]
+table_position: [0.4, 0.0, 0.4]
+franka_position: [0.0, 0.0, 0.41]
+
+# Cameras
+cameras:
+  static:
+    resolution: [256, 256]
+    position: [0.5, 0.0, 1.2]
+    target: [0.4, 0.0, 0.42]
+  wrist:
+    resolution: [128, 128]
+
+# Workspace bounds (meters, world frame) — used by VoxPoser
+workspace_bounds_min: [-0.4, -0.4, 0.0]
+workspace_bounds_max: [0.4, 0.4, 0.8]

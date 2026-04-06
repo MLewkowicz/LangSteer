@@ -44,6 +44,7 @@ class CalvinEnvironment(BaseEnvironment):
         self._num_points = cfg.get('num_points', 2048)
         self._render_mode = cfg.get('render_mode')
         self._max_steps = cfg.get('max_steps', 360)
+        self._done_on_success = cfg.get('done_on_success', True)
         self._current_step = 0
 
         # Per-pixel PCD images for 3D Diffuser Actor
@@ -182,7 +183,8 @@ class CalvinEnvironment(BaseEnvironment):
             )
             if self._task_name in achieved:
                 info['success'] = True
-                done = True
+                if self._done_on_success:
+                    done = True
 
         # Process final observation
         obs = self._process_obs(calvin_obs)

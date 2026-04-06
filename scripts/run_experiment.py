@@ -27,6 +27,9 @@ def instantiate_env(cfg: DictConfig) -> BaseEnvironment:
     elif env_name == "rlbench":
         from envs.rlbench import RLBenchEnvironment
         return RLBenchEnvironment(OmegaConf.to_container(cfg.env, resolve=True))
+    elif env_name == "isaac_sim":
+        from envs.isaac_sim import IsaacSimEnvironment
+        return IsaacSimEnvironment(OmegaConf.to_container(cfg.env, resolve=True))
     else:
         raise ValueError(f"Unknown environment: {env_name}")
 
@@ -180,10 +183,16 @@ def main(cfg: DictConfig) -> None:
                 # VoxPoser steering: reset env first, then generate value maps
                 # using the actual scene state
                 obs = env.reset()
-                # Get scene state from the environment for object detection
-                calvin_obs = env._gym_env._env.get_obs()
-                vp_robot_obs = calvin_obs.get('robot_obs', np.zeros(15))
-                vp_scene_obs = calvin_obs.get('scene_obs', np.zeros(24))
+                # Get scene state — method depends on environment
+                if hasattr(env, 'get_scene_state'):
+                    state = env.get_scene_state()
+                    vp_robot_obs = state['robot_obs']
+                    vp_scene_obs = state['scene_obs']
+                else:
+                    # CALVIN fallback: access internal gym env
+                    calvin_obs = env._gym_env._env.get_obs()
+                    vp_robot_obs = calvin_obs.get('robot_obs', np.zeros(15))
+                    vp_scene_obs = calvin_obs.get('scene_obs', np.zeros(24))
                 # steering.instruction overrides the instruction used for value maps
                 # (independent from the policy instruction in env.task_description)
                 vp_instruction = cfg.steering.get('instruction', None) or env.task_description

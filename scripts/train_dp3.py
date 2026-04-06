@@ -46,7 +46,7 @@ def main(cfg: DictConfig):
         )
 
     # Log configuration (only on main process)
-    rank = int(os.environ.get('RANK', 0))
+    rank = int(os.environ.get('RANK', os.environ.get('SLURM_PROCID', 0)))
     if rank == 0:
         logger.info("=" * 80)
         logger.info("DP3 Training Configuration:")

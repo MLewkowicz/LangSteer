@@ -14,7 +14,7 @@ embedding_dim: 192
 num_vis_ins_attn_layers: 2
 use_instruction: true
 fps_subsampling_factor: 3
-gripper_loc_bounds: [[-0.3021, -0.2569, -0.2156], [0.3613, 0.3377, 0.1837]]
+gripper_loc_bounds: [[-0.3021, -0.2569, -0.2156], [0.3613, 0.3377, 0.1837]]  # ABCD union bounds + 0.01 buffer (matches pretrained checkpoint)
 rotation_parametrization: "6D"
 quaternion_format: "wxyz"
 diffusion_timesteps: 25
