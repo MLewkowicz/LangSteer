@@ -12,7 +12,7 @@ Complete documentation for the LangSteer framework.
 Step-by-step tutorials for common tasks:
 
 - **[Experiments](guides/experiments.md)** - Running experiments and evaluations
-- **[Training](guides/training.md)** - Training DP3 policies and forecasters
+- **[Training](guides/training.md)** - Training Diffuser Actor policies and forecasters
 - **[Visualization](guides/visualization.md)** - Visualizing trajectories and camera feeds
 
 ## Reference

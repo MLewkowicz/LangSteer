@@ -1,8 +1,7 @@
 """DiffuserActor Training Workspace with SLURM/DDP Support.
 
 Iteration-based training for 3D Diffuser Actor on CALVIN.
-Adapted from 3d_diffuser_actor/engine.py + main_trajectory_calvin.py,
-following the DP3 trainer patterns in LangSteer.
+Adapted from 3d_diffuser_actor/engine.py + main_trajectory_calvin.py.
 """
 
 import io
@@ -38,8 +37,8 @@ class DiffuserActorTrainingWorkspace:
     """
     Iteration-based training workspace for DiffuserActor on CALVIN.
 
-    Key differences from DP3 trainer:
-    - Iteration-based (200K steps), not epoch-based
+    Key features:
+    - Iteration-based (200K steps)
     - Loss computed inside model.forward() (returns scalar)
     - Separate weight decay groups (no decay for bias/LayerNorm)
     - DDP with find_unused_parameters=True (frozen backbone)

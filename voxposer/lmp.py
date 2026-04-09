@@ -307,16 +307,6 @@ DEFAULT_LMP_CONFIGS = {
         'has_return': True,
         'return_val_name': 'ret_val',
     },
-    'get_gripper_map': {
-        'prompt_fname': 'get_gripper_map_prompt',
-        'stop': ['# Query:'],
-        'query_prefix': '# Query: ',
-        'query_suffix': '.',
-        'maintain_session': False,
-        'include_context': False,
-        'has_return': True,
-        'return_val_name': 'ret_val',
-    },
     'composer': {
         'prompt_fname': 'composer_prompt',
         'stop': ['# Query:'],

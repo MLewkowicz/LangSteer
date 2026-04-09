@@ -24,3 +24,4 @@ done_on_success: true  # End episode when task oracle detects success (set false
 
 # Task-specific reset
 use_task_initial_condition: true  # Enable task-specific scene state reset (required for proper task evaluation)
+randomize_initial_condition: false  # Sample random starting states from dataset episodes for the task (overrides use_task_initial_condition)

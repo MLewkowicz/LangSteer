@@ -1,4 +1,4 @@
-"""CALVIN Dataset for DP3 training.
+"""CALVIN Dataset for training from Zarr format.
 
 Loads CALVIN manipulation data from Zarr format with point clouds,
 robot proprioception, and actions.
@@ -12,12 +12,11 @@ from training.common.pytorch_util import dict_apply
 from training.common.replay_buffer import ReplayBuffer
 from training.common.sampler import (
     SequenceSampler, get_val_mask, downsample_mask)
-from policies.dp3_components.normalizer import LinearNormalizer, SingleFieldLinearNormalizer
-from termcolor import cprint
+from utils.normalizer import LinearNormalizer, SingleFieldLinearNormalizer
 
 
-class CalvinDataset(torch.utils.data.Dataset):
-    """CALVIN dataset loader for DP3 training.
+class CalvinZarrDataset(torch.utils.data.Dataset):
+    """CALVIN dataset loader from Zarr format.
 
     Loads pre-processed CALVIN data from Zarr format including:
     - Point clouds (2048 points, XYZRGB format, but only XYZ used)
@@ -68,7 +67,6 @@ class CalvinDataset(torch.utils.data.Dataset):
         self.pad_after = pad_after
 
     def get_validation_dataset(self):
-        """Create a validation dataset from the same replay buffer."""
         val_set = copy.copy(self)
         val_set.sampler = SequenceSampler(
             replay_buffer=self.replay_buffer,
@@ -81,62 +79,33 @@ class CalvinDataset(torch.utils.data.Dataset):
         return val_set
 
     def get_normalizer(self, mode='limits', **kwargs):
-        """Compute normalizer statistics from training data.
-
-        Args:
-            mode: Normalization mode ('limits' or 'gaussian')
-            **kwargs: Additional arguments for normalizer
-
-        Returns:
-            LinearNormalizer fitted to the training data
-        """
         data = {
             'action': self.replay_buffer['action'],
             'agent_pos': self.replay_buffer['state'][...,:],
-            # Point clouds use identity normalization (no normalization)
         }
         normalizer = LinearNormalizer()
         normalizer.fit(data=data, last_n_dims=1, mode=mode, **kwargs)
         normalizer['point_cloud'] = SingleFieldLinearNormalizer.create_identity()
-
         return normalizer
 
     def __len__(self) -> int:
         return len(self.sampler)
 
     def _sample_to_data(self, sample):
-        """Convert sampled data to model input format.
-
-        Args:
-            sample: Dictionary from sampler with keys: state, action, point_cloud
-
-        Returns:
-            Dictionary with 'obs' and 'action' keys
-        """
-        agent_pos = sample['state'][:,].astype(np.float32)  # (T, 15) - robot_obs from CALVIN
-        point_cloud = sample['point_cloud'][:,].astype(np.float32)  # (T, 2048, 6) - XYZRGB
-
-        # Extract only XYZ coordinates for point cloud (first 3 channels)
-        point_cloud_xyz = point_cloud[..., :3]  # (T, 2048, 3)
+        agent_pos = sample['state'][:,].astype(np.float32)
+        point_cloud = sample['point_cloud'][:,].astype(np.float32)
+        point_cloud_xyz = point_cloud[..., :3]
 
         data = {
             'obs': {
-                'point_cloud': point_cloud_xyz,  # T, 2048, 3
-                'agent_pos': agent_pos,  # T, 15
+                'point_cloud': point_cloud_xyz,
+                'agent_pos': agent_pos,
             },
-            'action': sample['action'].astype(np.float32)  # T, 7 - rel_actions from CALVIN
+            'action': sample['action'].astype(np.float32)
         }
         return data
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        """Get a single training sample.
-
-        Args:
-            idx: Sample index
-
-        Returns:
-            Dictionary with 'obs' and 'action' tensors
-        """
         sample = self.sampler.sample_sequence(idx)
         data = self._sample_to_data(sample)
         torch_data = dict_apply(data, torch.from_numpy)

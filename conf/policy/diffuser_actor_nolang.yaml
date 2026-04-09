@@ -4,7 +4,7 @@
 name: diffuser_actor
 
 # Checkpoint
-ckpt_path: "checkpoints/diffuser_actor_nolang.pth"
+ckpt_path: "checkpoints/diffuser_actor_calvin_nolang.pth"
 device: "cuda"
 
 # Architecture (must match training exactly)

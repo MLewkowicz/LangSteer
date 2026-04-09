@@ -255,10 +255,6 @@ class CalvinLMPInterface:
         """Return an empty avoidance map (zeros)."""
         return self._get_default_voxel_map('obstacle')
 
-    def get_empty_gripper_map(self):
-        """Return an empty gripper map (ones = open)."""
-        return self._get_default_voxel_map('gripper')
-
     # ==========================================================
     # Internal helpers
     # ==========================================================
@@ -377,12 +373,8 @@ class CalvinLMPInterface:
 
     def _get_default_voxel_map(self, map_type: str):
         """Create a default voxel map wrapped in VoxelIndexingWrapper."""
-        if map_type == 'target':
+        if map_type in ('target', 'obstacle'):
             arr = np.zeros((self._map_size, self._map_size, self._map_size))
-        elif map_type == 'obstacle':
-            arr = np.zeros((self._map_size, self._map_size, self._map_size))
-        elif map_type == 'gripper':
-            arr = np.ones((self._map_size, self._map_size, self._map_size))
         else:
             raise ValueError(f'Unknown voxel map type: {map_type}')
         return VoxelIndexingWrapper(arr)

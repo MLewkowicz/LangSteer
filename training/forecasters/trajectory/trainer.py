@@ -1,7 +1,7 @@
 """Training script for trajectory forecaster.
 
-Trains a neural network to predict clean trajectories from noisy ones, using the
-same infrastructure as DP3 training (DDP, normalizer, checkpointing, etc.).
+Trains a neural network to predict clean trajectories from noisy ones, using
+DDP, normalizer, checkpointing, etc.
 """
 
 import os
@@ -21,10 +21,10 @@ from tqdm import tqdm
 from typing import Optional
 
 from forecasters.trajectory_forecaster import TrajectoryForecaster
-from policies.dp3_components.encoder import DP3Encoder
-from policies.dp3_components.normalizer import LinearNormalizer
+from utils.pointnet_encoder import PointNetEncoder
+from utils.normalizer import LinearNormalizer
 from diffusers import DDIMScheduler
-from training.policies.dp3.dataset import CalvinDataset
+from training.common.calvin_zarr_dataset import CalvinZarrDataset
 from training.common.checkpoint_util import TopKCheckpointManager
 from training.common.ema_model import EMAModel
 
@@ -193,8 +193,8 @@ class ForecasterTrainingWorkspace:
         # Build encoder if requested
         encoder = None
         if cfg.encoder.use_encoder:
-            if cfg.encoder.encoder_type == "dp3":
-                # Build DP3Encoder
+            if cfg.encoder.encoder_type in ("dp3", "pointnet"):
+                # Build PointNetEncoder
                 observation_space = {
                     'point_cloud': [2048, 3],  # XYZ only (no color)
                     'agent_pos': [15]
@@ -204,7 +204,7 @@ class ForecasterTrainingWorkspace:
                     'use_layernorm': True,
                     'final_norm': 'layernorm',
                 }
-                encoder = DP3Encoder(
+                encoder = PointNetEncoder(
                     observation_space=observation_space,
                     out_channel=cfg.encoder.encoder_output_dim,
                     pointcloud_encoder_cfg=pointcloud_encoder_cfg,
@@ -212,11 +212,11 @@ class ForecasterTrainingWorkspace:
                     pointnet_type=cfg.encoder.pointnet_type,
                 )
 
-                # Optionally load pretrained DP3 encoder
-                if cfg.encoder.dp3_checkpoint is not None:
-                    logger.info(f"Loading DP3 encoder from {cfg.encoder.dp3_checkpoint}")
-                    checkpoint = torch.load(cfg.encoder.dp3_checkpoint, map_location='cpu')
-                    # Extract encoder state_dict from DP3 checkpoint
+                # Optionally load pretrained encoder
+                pretrained_ckpt = cfg.encoder.get('dp3_checkpoint') or cfg.encoder.get('pretrained_checkpoint')
+                if pretrained_ckpt is not None:
+                    logger.info(f"Loading encoder from {pretrained_ckpt}")
+                    checkpoint = torch.load(pretrained_ckpt, map_location='cpu')
                     encoder_state_dict = {k.replace('obs_encoder.', ''): v
                                          for k, v in checkpoint['model_state_dict'].items()
                                          if k.startswith('obs_encoder.')}
@@ -249,7 +249,7 @@ class ForecasterTrainingWorkspace:
 
         return forecaster
 
-    def _build_dataloader(self, dataset: CalvinDataset, is_train: bool = True) -> DataLoader:
+    def _build_dataloader(self, dataset: CalvinZarrDataset, is_train: bool = True) -> DataLoader:
         """Build dataloader with optional distributed sampler."""
         sampler = None
         shuffle = is_train
@@ -282,7 +282,7 @@ class ForecasterTrainingWorkspace:
 
         # Load dataset
         logger.info(f"Loading dataset from {cfg.dataset.zarr_path}")
-        dataset = CalvinDataset(
+        dataset = CalvinZarrDataset(
             zarr_path=cfg.dataset.zarr_path,
             horizon=cfg.dataset.horizon,
             pad_before=cfg.dataset.pad_before,

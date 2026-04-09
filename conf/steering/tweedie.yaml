@@ -1,23 +1,24 @@
-# Tweedie Steering Configuration
-# Uses Tweedie's formula to guide diffusion policy toward reference trajectories
+# Tweedie Steering
+# Unconditioned inference with Tweedie guidance toward reference trajectories
+#
+# Usage:
+#   uv run python scripts/run_experiment.py steering=tweedie \
+#     policy.mask_language=true policy.corrector_steps=2
 
 name: tweedie
 enabled: true
 
 # Guidance parameters
-guidance_strength: 1.0  # Scale factor for guidance gradient
-horizon: ${policy.pred_horizon}  # Prediction horizon (matches policy)
+guidance_strength: 1.0
+horizon: ${policy.pred_horizon}
 
-# Trajectory format: "dp3" or "diffuser_actor"
-# Controls reference trajectory loading, coordinate conversion, and dual-scheduler handling
-trajectory_format: dp3
-
-# Prediction type: "sample" (DP3), "epsilon" (DiffuserActor), or "v_prediction"
-prediction_type: sample
+# Position normalization bounds (from policy)
+gripper_loc_bounds: ${policy.gripper_loc_bounds}
+relative: ${policy.relative}
 
 # Timestep-dependent scaling
 use_timestep_scaling: true
-min_timestep_scale: 0.1  # Linearly anneals from min to 1.0 over diffusion steps
+min_timestep_scale: 0.1
 
 # Device
 device: ${policy.device}

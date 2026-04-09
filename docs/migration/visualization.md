@@ -124,12 +124,12 @@ python scripts/run_experiment.py \
 
 You can also create custom config files for common visualization setups:
 
-**conf/experiment/dp3_full_viz.yaml:**
+**conf/experiment/full_viz.yaml:**
 ```yaml
 # @package _global_
 
 defaults:
-  - /policy: dp3
+  - /policy: diffuser_actor
   - /env: calvin
   - /steering: tweedie
   - /visualization: base
@@ -152,7 +152,7 @@ num_episodes: 5
 
 **Usage:**
 ```bash
-python scripts/run_experiment.py experiment=dp3_full_viz
+python scripts/run_experiment.py experiment=full_viz
 ```
 
 ## Available Configuration Options

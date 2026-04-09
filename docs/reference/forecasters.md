@@ -44,7 +44,7 @@ Score-based forecaster using Tweedie's formula (no training required).
 **Advantages:**
 - No training needed
 - Theoretically grounded
-- Uses DP3's trained noise prediction directly
+- Uses the policy's trained noise prediction directly
 
 **Limitations:**
 - Assumes Gaussian noise
@@ -68,13 +68,11 @@ clean_pred = forecaster.forecast(noisy_traj, timestep)
 
 ### Dataset Preparation
 
-Forecasters are trained on the same CALVIN dataset as DP3:
+Forecasters are trained on CALVIN data in Zarr format:
 
 ```bash
-# Convert CALVIN to Zarr format (if not already done)
-python -m training.policies.dp3.preprocessing.convert_calvin \
-    --input_dir /path/to/calvin/dataset/task_D_D/training \
-    --output_dir /path/to/output.zarr
+# Ensure CALVIN dataset is converted to Zarr format
+# See training guide for dataset preparation
 ```
 
 ### Training Configuration
@@ -95,7 +93,7 @@ obs_horizon: 2
 # Model architecture (references conf/forecaster/base/)
 model: trajectory_mlp
 
-# Noise schedule (must match DP3)
+# Noise schedule (must match policy)
 num_diffusion_iters: 100
 beta_schedule: squaredcos_cap_v2
 ```
@@ -237,7 +235,7 @@ Key metrics tracked during training:
 
 **Training loss not decreasing:**
 - Check learning rate (try 1e-4 to 1e-3)
-- Verify noise schedule matches DP3
+- Verify noise schedule matches policy
 - Ensure dataset is normalized properly
 
 **NaN losses:**
@@ -262,4 +260,4 @@ Potential improvements:
 
 - [Training Guide](../guides/training.md) - General training documentation
 - [Steering Documentation](../../steering/README.md) - How forecasters are used
-- [DP3 Policy](../../policies/README.md) - Base diffusion policy
+- [Diffuser Actor Policy](../../policies/diffuser_actor.py) - Base diffusion policy

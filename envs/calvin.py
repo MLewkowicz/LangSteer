@@ -1,7 +1,9 @@
 """CALVIN environment adapter."""
 
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, List, Optional
 import logging
+import random
+from pathlib import Path
 import numpy as np
 from core.env import BaseEnvironment
 from core.types import Observation, Action
@@ -55,6 +57,14 @@ class CalvinEnvironment(BaseEnvironment):
         self._get_initial_condition_fn = get_initial_condition_for_task
         self._get_env_state_fn = get_env_state_for_initial_condition
 
+        # Random initial condition sampling from dataset episodes
+        self._randomize_initial_condition = cfg.get('randomize_initial_condition', False)
+        self._task_episode_ids: Dict[str, List[int]] = {}
+        self._dataset_path = Path(cfg.get('dataset_path'))
+        self._split = cfg.get('split', 'validation')
+        if self._randomize_initial_condition:
+            self._task_episode_ids = self._build_task_episode_index()
+
         # Initialize task oracle for success detection
         from calvin_env.envs.tasks import Tasks
         from omegaconf import OmegaConf
@@ -72,6 +82,41 @@ class CalvinEnvironment(BaseEnvironment):
         logger.info(f"  Max steps: {self._max_steps}")
         logger.info(f"  Use task-specific reset: {self._use_task_initial_condition}")
         logger.info(f"  Provide PCD images: {self._provide_pcd_images}")
+        logger.info(f"  Randomize initial condition: {self._randomize_initial_condition}")
+        if self._randomize_initial_condition and self._task_name in self._task_episode_ids:
+            logger.info(f"  Available starting episodes for '{self._task_name}': {len(self._task_episode_ids[self._task_name])}")
+
+    def _build_task_episode_index(self) -> Dict[str, List[int]]:
+        """Build index mapping task names to their starting episode IDs in the dataset."""
+        ann_path = self._dataset_path / self._split / "lang_annotations" / "auto_lang_ann.npy"
+        ann = np.load(str(ann_path), allow_pickle=True).item()
+        tasks = ann['language']['task']
+        start_end = ann['info']['indx']  # list of (start_frame, end_frame) tuples
+
+        task_index: Dict[str, List[int]] = {}
+        for i, task_name in enumerate(tasks):
+            if task_name not in task_index:
+                task_index[task_name] = []
+            task_index[task_name].append(start_end[i][0])  # start frame = episode ID
+
+        logger.info(f"Built episode index for {len(task_index)} tasks")
+        return task_index
+
+    def _sample_random_initial_condition(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Sample a random starting state from dataset episodes for the current task."""
+        episode_ids = self._task_episode_ids.get(self._task_name, [])
+        if not episode_ids:
+            logger.warning(f"No episodes for task '{self._task_name}', falling back to task-specific reset")
+            initial_condition = self._get_initial_condition_fn(self._task_name)
+            return self._get_env_state_fn(initial_condition)
+
+        ep_id = random.choice(episode_ids)
+        ep_path = self._dataset_path / self._split / f"episode_{ep_id:07d}.npz"
+        data = np.load(str(ep_path))
+        robot_obs = data['robot_obs'].astype(np.float32)
+        scene_obs = data['scene_obs'].astype(np.float32)
+        logger.info(f"Sampled random initial condition from episode {ep_id} for task '{self._task_name}'")
+        return robot_obs, scene_obs
 
     def _process_obs(self, calvin_obs: Dict) -> Observation:
         """Convert raw CALVIN observation to Observation DTO."""
@@ -114,13 +159,15 @@ class CalvinEnvironment(BaseEnvironment):
         Returns:
             Observation DTO with point cloud, proprioception, EE pose, and instruction
         """
-        # If no override provided and task-specific reset is enabled, use task initial condition
-        if robot_obs is None and scene_obs is None and self._use_task_initial_condition:
+        # Priority: explicit override > random sampling > task-specific > CALVIN default
+        if robot_obs is not None or scene_obs is not None:
+            logger.info("Resetting to provided robot/scene state (reference trajectory)")
+        elif self._randomize_initial_condition:
+            robot_obs, scene_obs = self._sample_random_initial_condition()
+        elif self._use_task_initial_condition:
             initial_condition = self._get_initial_condition_fn(self._task_name)
             robot_obs, scene_obs = self._get_env_state_fn(initial_condition)
             logger.info(f"Resetting to task-specific state: {initial_condition}")
-        elif robot_obs is not None or scene_obs is not None:
-            logger.info("Resetting to provided robot/scene state (reference trajectory)")
 
         # Reset CALVIN environment with optional scene state
         calvin_obs = self._gym_env.reset(robot_obs=robot_obs, scene_obs=scene_obs)

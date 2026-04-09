@@ -142,7 +142,7 @@ Create a custom config file for common visualization setups:
 # @package _global_
 
 defaults:
-  - /policy: dp3
+  - /policy: diffuser_actor
   - /env: calvin
   - /steering: tweedie
   - /visualization: base

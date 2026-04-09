@@ -98,7 +98,7 @@ python scripts/visualize_cameras.py
 
 ## 🎯 Experiment 3: Full Model Rollout with Custom Start State
 
-**What it does:** Runs your trained DP3 model from a custom starting state and visualizes the trajectory
+**What it does:** Runs your trained model from a custom starting state and visualizes the trajectory
 
 ### Step 1: Modify the starting position
 
