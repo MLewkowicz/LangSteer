@@ -102,7 +102,7 @@ class VoxPoserSteering(BaseSteering):
         self._gradient_field: Optional[torch.Tensor] = None  # (M,M,M,3)
 
         # Multi-stage state
-        self._stages: list = []  # [(aff, avoid, grip), ...] raw from composer
+        self._stages: list = []  # [(aff, avoid), ...] raw from composer
         self._current_stage_idx: int = 0
         self._current_stage_target: Optional[np.ndarray] = None  # (3,) world pos
         self._stage_proximity_threshold: float = cfg.get(
@@ -110,9 +110,8 @@ class VoxPoserSteering(BaseSteering):
         )
 
         # Schedulers — set by the policy wrapper before inference
-        self.scheduler = None           # single scheduler (DP3)
-        self.position_scheduler = None  # DiffuserActor position scheduler
-        self.rotation_scheduler = None  # DiffuserActor rotation scheduler
+        self.position_scheduler = None
+        self.rotation_scheduler = None
 
         self.current_episode_step = 0
         self._robot_obs: Optional[np.ndarray] = None  # cached for visualization
@@ -125,20 +124,15 @@ class VoxPoserSteering(BaseSteering):
         )
 
     # ------------------------------------------------------------------
-    # Scheduler setters (mirror TweedieSteering interface)
+    # Scheduler setters
     # ------------------------------------------------------------------
 
-    def set_scheduler(self, scheduler):
-        """Store reference to noise scheduler (DP3 single-scheduler mode)."""
-        self.scheduler = scheduler
-
     def set_position_scheduler(self, scheduler):
-        """Store reference to position noise scheduler (DiffuserActor)."""
+        """Store reference to position noise scheduler."""
         self.position_scheduler = scheduler
-        self.scheduler = scheduler  # also used for timestep scaling
 
     def set_rotation_scheduler(self, scheduler):
-        """Store reference to rotation noise scheduler (DiffuserActor)."""
+        """Store reference to rotation noise scheduler."""
         self.rotation_scheduler = scheduler
 
     def set_current_gripper_pos(self, gripper_pos: np.ndarray):
@@ -172,8 +166,8 @@ class VoxPoserSteering(BaseSteering):
         """Generate value maps for a new episode via LLM composer.
 
         The composer returns either:
-          - A list of stage tuples: [(aff, avoid, grip), ...]
-          - A single tuple (legacy): (aff, avoid, grip)
+          - A list of stage tuples: [(aff, avoid), ...]
+          - A single tuple: (aff, avoid)
 
         Each stage gets its own ValueMap + gradient field. Stage transitions
         happen at runtime via check_stage_transition().
@@ -217,8 +211,8 @@ class VoxPoserSteering(BaseSteering):
         # Parse composer result into list of stage tuples
         if isinstance(result, list):
             self._stages = result
-        elif isinstance(result, tuple) and len(result) == 3:
-            # Legacy single-stage format: wrap as 1-element list
+        elif isinstance(result, tuple) and len(result) == 2:
+            # Single-stage format: wrap as 1-element list
             self._stages = [result]
         else:
             logger.warning(f"Unexpected composer result type: {type(result)}")
@@ -244,17 +238,16 @@ class VoxPoserSteering(BaseSteering):
             return
 
         stage = self._stages[idx]
-        if not (isinstance(stage, (tuple, list)) and len(stage) == 3):
-            logger.warning(f"Stage {idx}: expected 3-tuple, got {type(stage)}")
+        if not (isinstance(stage, (tuple, list)) and len(stage) == 2):
+            logger.warning(f"Stage {idx}: expected 2-tuple, got {type(stage)}")
             self._value_map = None
             self._gradient_field = None
             return
 
-        aff_fn, avoid_fn, grip_fn = stage
+        aff_fn, avoid_fn = stage
 
         affordance = self._eval_map(aff_fn)
         avoidance = self._eval_map(avoid_fn)
-        gripper = self._eval_map(grip_fn)
 
         if affordance is None:
             logger.warning(f"Stage {idx}: no affordance map, steering disabled")
@@ -267,7 +260,6 @@ class VoxPoserSteering(BaseSteering):
         self._value_map = ValueMap(
             affordance=affordance,
             avoidance=avoidance,
-            gripper=gripper,
             workspace_bounds_min=self._workspace_min,
             workspace_bounds_max=self._workspace_max,
             map_size=self.map_size,
@@ -518,7 +510,7 @@ class VoxPoserSteering(BaseSteering):
 
     def _get_alpha_bar(self, timestep) -> torch.Tensor:
         """Get cumulative noise schedule value ᾱ_t for the position scheduler."""
-        sched = self.position_scheduler or self.scheduler
+        sched = self.position_scheduler
         if sched is None:
             return torch.tensor(0.5, device=self.device)
 
@@ -542,7 +534,7 @@ class VoxPoserSteering(BaseSteering):
         if self.prediction_type == 'sample':
             return model_output
 
-        sched = self.position_scheduler or self.scheduler
+        sched = self.position_scheduler
         if sched is None:
             logger.warning("No scheduler set, returning model_output as x_0")
             return model_output
@@ -579,11 +571,10 @@ class VoxPoserSteering(BaseSteering):
 
         t = timestep.item() if isinstance(timestep, torch.Tensor) else timestep
 
-        sched = self.position_scheduler or self.scheduler
-        if sched is None:
+        if self.position_scheduler is None:
             return 1.0
 
-        max_timestep = sched.config.num_train_timesteps
+        max_timestep = self.position_scheduler.config.num_train_timesteps
         normalized_t = t / max_timestep
         return self.min_timestep_scale + (1.0 - self.min_timestep_scale) * normalized_t
 

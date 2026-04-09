@@ -37,19 +37,16 @@ def instantiate_env(cfg: DictConfig) -> BaseEnvironment:
 def instantiate_policy(cfg: DictConfig) -> BasePolicy:
     """Factory function to instantiate policy based on config."""
     policy_name = cfg.policy.name
-    if policy_name == "dp3":
-        from policies.dp3 import DP3Policy
-        policy = DP3Policy(OmegaConf.to_container(cfg.policy, resolve=True))
-    elif policy_name == "diffuser_actor":
+    if policy_name == "diffuser_actor":
         from policies.diffuser_actor import DiffuserActorPolicy
         policy = DiffuserActorPolicy(OmegaConf.to_container(cfg.policy, resolve=True))
     else:
         raise ValueError(f"Unknown policy: {policy_name}")
-    
+
     # Load checkpoint if specified
     if hasattr(cfg.policy, "ckpt_path") and cfg.policy.ckpt_path:
         policy.load_checkpoint(cfg.policy.ckpt_path)
-    
+
     return policy
 
 
@@ -58,9 +55,6 @@ def instantiate_steering(cfg: DictConfig) -> BaseSteering | None:
     steering_name = cfg.steering.name
     if steering_name == "none" or steering_name is None:
         return None
-    elif steering_name == "dynaguide":
-        from steering.dynaguide import DynaGuideSteering
-        return DynaGuideSteering(OmegaConf.to_container(cfg.steering, resolve=True))
     elif steering_name == "tweedie":
         from steering.tweedie import TweedieSteering
         return TweedieSteering(OmegaConf.to_container(cfg.steering, resolve=True))
@@ -126,16 +120,12 @@ def main(cfg: DictConfig) -> None:
     # Initialize steering with policy's scheduler and trajectory loader
     if steering is not None:
         # Wire noise scheduler(s) to steering module
-        if cfg.policy.name == "dp3" and hasattr(steering, 'set_scheduler'):
-            steering.set_scheduler(policy._dp3_model.noise_scheduler)
-            logger.info("Set DP3 scheduler reference for steering")
-        elif cfg.policy.name == "diffuser_actor":
-            if hasattr(steering, 'set_position_scheduler'):
-                steering.set_position_scheduler(policy._model.position_noise_scheduler)
-                logger.info("Set DiffuserActor position scheduler for steering")
-            if hasattr(steering, 'set_rotation_scheduler'):
-                steering.set_rotation_scheduler(policy._model.rotation_noise_scheduler)
-                logger.info("Set DiffuserActor rotation scheduler for steering")
+        if hasattr(steering, 'set_position_scheduler'):
+            steering.set_position_scheduler(policy._model.position_noise_scheduler)
+            logger.info("Set position scheduler for steering")
+        if hasattr(steering, 'set_rotation_scheduler'):
+            steering.set_rotation_scheduler(policy._model.rotation_noise_scheduler)
+            logger.info("Set rotation scheduler for steering")
 
         if hasattr(steering, 'set_trajectory_loader'):
             from utils.reference_trajectory_loader import ReferenceTrajectoryLoader

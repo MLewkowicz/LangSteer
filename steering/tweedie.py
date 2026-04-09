@@ -14,42 +14,35 @@ class TweedieSteering(BaseSteering):
     """
     Tweedie guidance for steering diffusion policies.
     Uses Tweedie's formula to predict clean trajectories and compute
-    gradient guidance toward reference trajectories.
+    analytical gradient guidance toward reference trajectories.
 
-    Supports two trajectory formats:
-    - "dp3": Single scheduler, (B, H, 7) trajectories, prediction_type from config
-    - "diffuser_actor": Dual schedulers (position/rotation), (B, L, 9) trajectories,
-      epsilon prediction, reference in normalized pos(3) + rot_6d(6) space
+    Operates in dual-scheduler mode (position/rotation) with epsilon prediction.
+    Reference trajectories are in normalized pos(3) + rot_6d(6) space.
     """
 
     def __init__(self, cfg: Any) -> None:
         super().__init__(cfg)
 
-        # Guidance parameters
         self.guidance_strength = cfg.get("guidance_strength", 1.0)
         self.horizon = cfg.get("horizon", 16)
-        self.prediction_type = cfg.get("prediction_type", "sample")
         self.device = cfg.get("device", "cuda")
-        self.trajectory_format = cfg.get("trajectory_format", "dp3")
 
-        # Timestep scaling configuration
+        # Timestep scaling
         self.use_timestep_scaling = cfg.get("use_timestep_scaling", True)
         self.min_timestep_scale = cfg.get("min_timestep_scale", 0.1)
 
         # Sliding window tracking
-        self.reference_trajectory = None  # (T, D) where D=7 for dp3, D=9 for diffuser_actor
+        self.reference_trajectory = None  # (T, 9): abs_pos(3) + rot_6d(6)
         self.current_episode_step = 0
-        self.scheduler = None  # DP3: single scheduler
-        self.position_scheduler = None  # DiffuserActor: position scheduler
-        self.rotation_scheduler = None  # DiffuserActor: rotation scheduler
+        self.position_scheduler = None
+        self.rotation_scheduler = None
         self.trajectory_loader = None
 
-        # DiffuserActor-specific state
+        # DiffuserActor coordinate conversion state
         self._gripper_loc_bounds = None  # (2, 3) tensor for position normalization
-        self._current_gripper_pos = None  # (3,) absolute gripper position for relative conversion
+        self._current_gripper_pos = None  # (3,) absolute gripper position
         self._is_relative = cfg.get("relative", True)
 
-        # Store gripper_loc_bounds from config if provided
         glb = cfg.get("gripper_loc_bounds", None)
         if glb is not None:
             self._gripper_loc_bounds = torch.tensor(glb, dtype=torch.float32)
@@ -58,25 +51,16 @@ class TweedieSteering(BaseSteering):
             f"Initialized TweedieSteering: "
             f"strength={self.guidance_strength}, "
             f"horizon={self.horizon}, "
-            f"format={self.trajectory_format}, "
-            f"prediction_type={self.prediction_type}, "
             f"timestep_scaling={self.use_timestep_scaling}"
         )
 
-    def set_scheduler(self, scheduler):
-        """Store reference to noise scheduler (DP3 single-scheduler mode)."""
-        self.scheduler = scheduler
-        logger.debug("Set scheduler reference for Tweedie steering")
-
     def set_position_scheduler(self, scheduler):
-        """Store reference to position noise scheduler (DiffuserActor)."""
+        """Store reference to position noise scheduler."""
         self.position_scheduler = scheduler
-        # Also set as default scheduler for timestep scaling
-        self.scheduler = scheduler
         logger.debug("Set position scheduler for Tweedie steering")
 
     def set_rotation_scheduler(self, scheduler):
-        """Store reference to rotation noise scheduler (DiffuserActor)."""
+        """Store reference to rotation noise scheduler."""
         self.rotation_scheduler = scheduler
         logger.debug("Set rotation scheduler for Tweedie steering")
 
@@ -89,9 +73,6 @@ class TweedieSteering(BaseSteering):
         """
         Set current absolute gripper position for relative coordinate conversion.
         Called by policy wrapper before each forward pass.
-
-        Args:
-            gripper_pos: (3,) absolute gripper XYZ position
         """
         self._current_gripper_pos = torch.tensor(
             gripper_pos, dtype=torch.float32, device=self.device
@@ -100,8 +81,7 @@ class TweedieSteering(BaseSteering):
     def setup_episode(self, task_name: str):
         """
         Load reference trajectory for new episode and reset step counter.
-
-        For diffuser_actor format, converts reference to normalized-6D space.
+        Converts reference to normalized-6D space.
         """
         self.current_episode_step = 0
 
@@ -117,34 +97,23 @@ class TweedieSteering(BaseSteering):
             self.reference_trajectory = None
             return None, None
 
-        if self.trajectory_format == "diffuser_actor":
-            self._setup_diffuser_actor_reference(trajectory_data)
-        else:
-            self._setup_dp3_reference(trajectory_data)
+        self._setup_reference(trajectory_data)
 
         logger.info(
             f"Loaded reference trajectory for '{task_name}': "
             f"{self.reference_trajectory.shape[0]} frames, "
-            f"shape={self.reference_trajectory.shape}, "
-            f"format={self.trajectory_format}"
+            f"shape={self.reference_trajectory.shape}"
         )
 
         return trajectory_data['robot_obs_init'], trajectory_data['scene_obs_init']
 
-    def _setup_dp3_reference(self, trajectory_data):
-        """Setup reference from DP3-format actions (relative deltas)."""
-        actions = trajectory_data['actions']  # (T, 7) numpy
-        self.reference_trajectory = torch.from_numpy(actions).float().to(self.device)
-        if self.reference_trajectory.dim() == 1:
-            self.reference_trajectory = self.reference_trajectory.unsqueeze(0)
-
-    def _setup_diffuser_actor_reference(self, trajectory_data):
+    def _setup_reference(self, trajectory_data):
         """
         Setup reference from CALVIN robot_obs (absolute poses).
 
         Converts to model-internal space:
         - Position: absolute XYZ (NOT normalized/relative yet - done per guidance call)
-        - Rotation: euler XYZ → quaternion wxyz → rotation matrix → 6D
+        - Rotation: euler XYZ -> quaternion wxyz -> rotation matrix -> 6D
 
         Stored as (T, 9): abs_pos(3) + rot_6d(6)
         """
@@ -161,8 +130,6 @@ class TweedieSteering(BaseSteering):
         abs_pos = robot_obs[:, :3]  # (T, 3) absolute XYZ
         euler_xyz = robot_obs[:, 3:6]  # (T, 3) euler XYZ
 
-        # Convert euler → quaternion (wxyz) → 6D rotation
-        # convert_rotation does euler → wxyz quat via pytorch3d
         quats = []
         for i in range(len(euler_xyz)):
             q = convert_rotation(euler_xyz[i])  # (4,) wxyz
@@ -174,14 +141,13 @@ class TweedieSteering(BaseSteering):
         rot_matrices = quaternion_to_matrix(quats_t)  # (T, 3, 3)
         rot_6d = get_ortho6d_from_rotation_matrix(rot_matrices)  # (T, 6)
 
-        # Store as (T, 9): abs_pos(3) + rot_6d(6)
         abs_pos_t = torch.from_numpy(abs_pos).float()
         self.reference_trajectory = torch.cat(
             [abs_pos_t, rot_6d], dim=-1
         ).to(self.device)
 
         logger.debug(
-            f"DiffuserActor reference: pos range "
+            f"Reference: pos range "
             f"[{abs_pos_t.min(0).values.numpy()}, {abs_pos_t.max(0).values.numpy()}]"
         )
 
@@ -194,84 +160,16 @@ class TweedieSteering(BaseSteering):
         """
         Compute Tweedie guidance gradient toward reference trajectory.
 
-        Args:
-            current_sample: Noisy trajectory x_t, shape (B, H, D)
-            timestep: Current diffusion timestep (int or Tensor)
-            obs_embedding: Observation features (unused for dp3; fixed_inputs for diffuser_actor)
-            model_output: Model's prediction (epsilon or x_0 depending on type)
+        Uses Tweedie's formula to predict x_0 from (x_t, epsilon), then computes
+        the analytical gradient of MSE(x_0_pred, ref) w.r.t. epsilon.
 
-        Returns:
-            Guidance gradient to add to model output, shape matching model_output
+        For epsilon prediction: x_0 = (x_t - sqrt(1-alpha_bar)*eps) / sqrt(alpha_bar)
+        Modifying eps by d_eps shifts x_0 by: -sqrt(1-alpha_bar)/sqrt(alpha_bar) * d_eps
+        So d_eps = strength * sqrt(1-alpha_bar)/sqrt(alpha_bar) * (x_0_pred - ref) steers x_0 toward ref.
         """
         if self.reference_trajectory is None:
             return torch.zeros_like(model_output)
 
-        if self.trajectory_format == "diffuser_actor":
-            return self._get_guidance_diffuser_actor(
-                current_sample, timestep, obs_embedding, model_output
-            )
-        else:
-            return self._get_guidance_dp3(
-                current_sample, timestep, obs_embedding, model_output
-            )
-
-    def _get_guidance_dp3(self, current_sample, timestep, obs_embedding,
-                          model_output):
-        """Original DP3 guidance path."""
-        ref_window = self._get_reference_window()
-        if ref_window is None:
-            return torch.zeros_like(model_output)
-
-        ref_batch = ref_window.unsqueeze(0).detach()  # (1, horizon, D)
-        scale = self._compute_timestep_scale(timestep)
-
-        if self.prediction_type == "sample":
-            pred_traj = model_output[:, :self.horizon, :]
-            mse_loss = F.mse_loss(pred_traj, ref_batch, reduction='mean')
-
-            guidance = -self.guidance_strength * scale * (pred_traj - ref_batch)
-
-            if model_output.shape[1] > self.horizon:
-                padding = torch.zeros(
-                    (model_output.shape[0], model_output.shape[1] - self.horizon, model_output.shape[2]),
-                    device=model_output.device
-                )
-                guidance = torch.cat([guidance, padding], dim=1)
-        else:
-            current_sample = current_sample.clone().requires_grad_(True)
-            x_0_pred = self._predict_x0(current_sample, timestep, model_output)
-            pred_traj = x_0_pred[:, :self.horizon, :]
-
-            mse_loss = F.mse_loss(pred_traj, ref_batch, reduction='mean')
-
-            gradient = torch.autograd.grad(
-                mse_loss, current_sample, create_graph=False
-            )[0]
-            guidance = -self.guidance_strength * scale * gradient
-
-        if self.current_episode_step % 10 == 0:
-            logger.debug(
-                f"Step {self.current_episode_step}, timestep {timestep}: "
-                f"MSE={mse_loss.item():.4f}, "
-                f"guidance_norm={torch.norm(guidance).item():.4f}, "
-                f"scale={scale:.4f}"
-            )
-
-        return guidance.detach()
-
-    def _get_guidance_diffuser_actor(self, current_sample, timestep,
-                                     fixed_inputs, model_output):
-        """
-        DiffuserActor guidance: analytical epsilon-space guidance with dual schedulers.
-
-        Uses Tweedie's formula to predict x_0 from (x_t, epsilon), then computes
-        the analytical gradient of MSE(x_0_pred, ref) w.r.t. epsilon. This avoids
-        autograd and works inside torch.no_grad() context.
-
-        For epsilon prediction: x_0 = (x_t - sqrt(1-ᾱ)·ε) / sqrt(ᾱ)
-        Modifying ε by δε shifts x_0 by: -sqrt(1-ᾱ)/sqrt(ᾱ) · δε
-        So δε = strength · sqrt(1-ᾱ)/sqrt(ᾱ) · (x_0_pred - ref) steers x_0 toward ref.
-        """
         ref_window = self._get_reference_window()  # (horizon, 9): abs_pos + rot_6d
         if ref_window is None:
             return torch.zeros_like(model_output)
@@ -280,11 +178,9 @@ class TweedieSteering(BaseSteering):
         ref_pos = ref_window[:, :3].clone()  # (horizon, 3)
         ref_rot = ref_window[:, 3:9].clone()  # (horizon, 6)
 
-        # Relative conversion: subtract current gripper position
         if self._is_relative and self._current_gripper_pos is not None:
             ref_pos = ref_pos - self._current_gripper_pos.unsqueeze(0)
 
-        # Normalize position to [-1, 1] using gripper_loc_bounds
         if self._gripper_loc_bounds is not None:
             bounds = self._gripper_loc_bounds.to(ref_pos.device)
             pos_min = bounds[0]
@@ -296,7 +192,6 @@ class TweedieSteering(BaseSteering):
 
         scale = self._compute_timestep_scale(timestep)
 
-        # Get alpha_bar values for Tweedie prediction
         if isinstance(timestep, torch.Tensor):
             t_idx = timestep.long()
         else:
@@ -318,8 +213,7 @@ class TweedieSteering(BaseSteering):
         x_0_pos = (x_t_pos - torch.sqrt(1 - alpha_bar_pos) * eps_pos) / torch.sqrt(alpha_bar_pos)
         x_0_rot = (x_t_rot - torch.sqrt(1 - alpha_bar_rot) * eps_rot) / torch.sqrt(alpha_bar_rot)
 
-        # Analytical gradient in epsilon space:
-        # δε = strength · scale · sqrt(1-ᾱ)/sqrt(ᾱ) · (x_0_pred - ref)
+        # Analytical gradient in epsilon space
         coeff_pos = torch.sqrt(1 - alpha_bar_pos) / torch.sqrt(alpha_bar_pos)
         coeff_rot = torch.sqrt(1 - alpha_bar_rot) / torch.sqrt(alpha_bar_rot)
 
@@ -332,15 +226,14 @@ class TweedieSteering(BaseSteering):
         h = min(self.horizon, L)
         guidance[:, :h, :3] = delta_eps_pos[:, :h]
         guidance[:, :h, 3:9] = delta_eps_rot[:, :h]
-        # dims 9+ (openness) get zero guidance
 
-        # Compute MSE for logging
+        # Logging
         mse_pos = F.mse_loss(x_0_pos, ref_model_space[..., :3], reduction='mean')
         mse_rot = F.mse_loss(x_0_rot, ref_model_space[..., 3:9], reduction='mean')
 
         if self.current_episode_step % 10 == 0:
             logger.debug(
-                f"[DA] Step {self.current_episode_step}, t={timestep}: "
+                f"Step {self.current_episode_step}, t={timestep}: "
                 f"MSE_pos={mse_pos.item():.4f}, MSE_rot={mse_rot.item():.4f}, "
                 f"guidance_norm={torch.norm(guidance).item():.4f}, "
                 f"scale={scale:.4f}, coeff_pos={coeff_pos.item():.4f}"
@@ -349,12 +242,7 @@ class TweedieSteering(BaseSteering):
         return guidance
 
     def _get_reference_window(self) -> Optional[torch.Tensor]:
-        """
-        Get current window from reference trajectory using sliding window.
-
-        Returns:
-            Tensor of shape (horizon, D) or None if out of bounds
-        """
+        """Get current window from reference trajectory using sliding window."""
         if self.reference_trajectory is None:
             return None
 
@@ -395,43 +283,6 @@ class TweedieSteering(BaseSteering):
 
         return window
 
-    def _predict_x0(self, x_t: torch.Tensor, timestep: int,
-                    model_output: torch.Tensor) -> torch.Tensor:
-        """
-        Apply Tweedie's formula (single scheduler, DP3 path).
-        """
-        if self.prediction_type == "sample":
-            return model_output
-
-        elif self.prediction_type == "epsilon":
-            if isinstance(timestep, torch.Tensor):
-                t_idx = timestep.long()
-            else:
-                t_idx = torch.tensor([timestep], device=self.device, dtype=torch.long)
-
-            alpha_bar = self.scheduler.alphas_cumprod[t_idx]
-            alpha_bar = torch.clamp(alpha_bar, min=1e-6)
-            alpha_bar = alpha_bar.view(-1, 1, 1)
-
-            x_0_pred = (x_t - torch.sqrt(1 - alpha_bar) * model_output) / torch.sqrt(alpha_bar)
-            return x_0_pred
-
-        elif self.prediction_type == "v_prediction":
-            if isinstance(timestep, torch.Tensor):
-                t_idx = timestep.long()
-            else:
-                t_idx = torch.tensor([timestep], device=self.device, dtype=torch.long)
-
-            alpha_bar = self.scheduler.alphas_cumprod[t_idx]
-            alpha_bar = torch.clamp(alpha_bar, min=1e-6)
-            alpha_bar = alpha_bar.view(-1, 1, 1)
-
-            x_0_pred = torch.sqrt(alpha_bar) * x_t - torch.sqrt(1 - alpha_bar) * model_output
-            return x_0_pred
-
-        else:
-            raise ValueError(f"Unknown prediction_type: {self.prediction_type}")
-
     def _compute_timestep_scale(self, timestep: int) -> float:
         """Compute guidance scale based on diffusion timestep."""
         if not self.use_timestep_scaling:
@@ -442,12 +293,10 @@ class TweedieSteering(BaseSteering):
         else:
             t = timestep
 
-        # Use position scheduler (or single scheduler) for max timestep
-        sched = self.position_scheduler or self.scheduler
-        if sched is None:
+        if self.position_scheduler is None:
             return 1.0
 
-        max_timestep = sched.config.num_train_timesteps
+        max_timestep = self.position_scheduler.config.num_train_timesteps
         normalized_t = t / max_timestep
 
         scale = self.min_timestep_scale + (1.0 - self.min_timestep_scale) * normalized_t

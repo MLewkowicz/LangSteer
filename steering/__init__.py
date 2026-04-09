@@ -1,6 +1,6 @@
 """Concrete steering implementations."""
 
-from steering.dynaguide import DynaGuideSteering
 from steering.tweedie import TweedieSteering
+from steering.voxposer_steering import VoxPoserSteering
 
-__all__ = ["DynaGuideSteering", "TweedieSteering"]
+__all__ = ["TweedieSteering", "VoxPoserSteering"]
