@@ -12,8 +12,16 @@ wheels/
 # Experiment outputs
 outputs/
 
-# Folders
+# Data, checkpoints, and caches
+cache/
+checkpoints/
+tmp/
+wandb/
+
+# External repos
 calvin/
+3d_diffuser_actor/
+VoxPoser/
 
 # Configs
 .claude/

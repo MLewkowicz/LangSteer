@@ -1,21 +1,28 @@
 """Linear normalization for observations and actions.
 
-Extracted from:
-- diffusion_policy_3d/model/common/normalizer.py
-- diffusion_policy_3d/model/common/dict_of_tensor_mixin.py
+Supports 'limits' (min-max) and 'gaussian' (z-score) normalization modes.
+Used by training pipelines and forecasters.
 """
 
-from typing import Union, Dict
+from typing import Union, Dict, Callable
 import numpy as np
 import torch
 import torch.nn as nn
 
-from policies.dp3_components.utils import dict_apply
 
+def dict_apply(
+        x: Dict[str, torch.Tensor],
+        func: Callable[[torch.Tensor], torch.Tensor]
+        ) -> Dict[str, torch.Tensor]:
+    """Apply function to all tensors in a (nested) dictionary."""
+    result = dict()
+    for key, value in x.items():
+        if isinstance(value, dict):
+            result[key] = dict_apply(value, func)
+        else:
+            result[key] = func(value)
+    return result
 
-# ==============================================================================
-# DictOfTensorMixin (from dict_of_tensor_mixin.py)
-# ==============================================================================
 
 class DictOfTensorMixin(nn.Module):
     """Base class for modules that store parameters in a nested ParameterDict."""
@@ -28,16 +35,13 @@ class DictOfTensorMixin(nn.Module):
 
     @property
     def device(self):
-        """Get device of module parameters."""
         return next(iter(self.parameters())).device
 
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
-        """Custom state dict loading to handle nested ParameterDict."""
         def dfs_add(dest, keys, value: torch.Tensor):
             if len(keys) == 1:
                 dest[keys[0]] = value
                 return
-
             if keys[0] not in dest:
                 dest[keys[0]] = nn.ParameterDict()
             dfs_add(dest[keys[0]], keys[1:], value)
@@ -56,10 +60,6 @@ class DictOfTensorMixin(nn.Module):
         return
 
 
-# ==============================================================================
-# Normalizer Classes (from normalizer.py)
-# ==============================================================================
-
 class LinearNormalizer(DictOfTensorMixin):
     """
     Linear normalizer for dictionaries of tensors.
@@ -77,19 +77,6 @@ class LinearNormalizer(DictOfTensorMixin):
         output_min=-1.,
         range_eps=1e-4,
         fit_offset=True):
-        """
-        Fit normalizer to data.
-
-        Args:
-            data: Data to fit (dict of tensors or single tensor/array)
-            last_n_dims: Number of dimensions to treat as features
-            dtype: Target dtype
-            mode: 'limits' for min-max or 'gaussian' for z-score normalization
-            output_max: Maximum output value (limits mode)
-            output_min: Minimum output value (limits mode)
-            range_eps: Epsilon for handling near-constant dimensions
-            fit_offset: Whether to fit offset term
-        """
         if isinstance(data, dict):
             for key, value in data.items():
                 self.params_dict[key] = _fit(value,
@@ -114,15 +101,12 @@ class LinearNormalizer(DictOfTensorMixin):
         return self.normalize(x)
 
     def __getitem__(self, key: str):
-        """Get single-field normalizer for a specific key."""
         return SingleFieldLinearNormalizer(self.params_dict[key])
 
     def __setitem__(self, key: str, value: 'SingleFieldLinearNormalizer'):
-        """Set single-field normalizer for a specific key."""
         self.params_dict[key] = value.params_dict
 
     def _normalize_impl(self, x, forward=True):
-        """Internal normalization implementation."""
         if isinstance(x, dict):
             result = dict()
             for key, value in x.items():
@@ -136,15 +120,12 @@ class LinearNormalizer(DictOfTensorMixin):
             return _normalize(x, params, forward=forward)
 
     def normalize(self, x: Union[Dict, torch.Tensor, np.ndarray]) -> torch.Tensor:
-        """Normalize input data."""
         return self._normalize_impl(x, forward=True)
 
     def unnormalize(self, x: Union[Dict, torch.Tensor, np.ndarray]) -> torch.Tensor:
-        """Unnormalize (denormalize) data."""
         return self._normalize_impl(x, forward=False)
 
     def get_input_stats(self) -> Dict:
-        """Get input statistics (min, max, mean, std)."""
         if len(self.params_dict) == 0:
             raise RuntimeError("Not initialized")
         if len(self.params_dict) == 1 and '_default' in self.params_dict:
@@ -157,10 +138,8 @@ class LinearNormalizer(DictOfTensorMixin):
         return result
 
     def get_output_stats(self, key='_default'):
-        """Get output statistics after normalization."""
         input_stats = self.get_input_stats()
         if 'min' in input_stats:
-            # no dict
             return dict_apply(input_stats, self.normalize)
 
         result = dict()
@@ -189,7 +168,6 @@ class SingleFieldLinearNormalizer(DictOfTensorMixin):
             output_min=-1.,
             range_eps=1e-4,
             fit_offset=True):
-        """Fit normalizer to data."""
         self.params_dict = _fit(data,
             last_n_dims=last_n_dims,
             dtype=dtype,
@@ -201,7 +179,6 @@ class SingleFieldLinearNormalizer(DictOfTensorMixin):
 
     @classmethod
     def create_fit(cls, data: Union[torch.Tensor, np.ndarray], **kwargs):
-        """Create and fit normalizer in one step."""
         obj = cls()
         obj.fit(data, **kwargs)
         return obj
@@ -211,14 +188,12 @@ class SingleFieldLinearNormalizer(DictOfTensorMixin):
             scale: Union[torch.Tensor, np.ndarray],
             offset: Union[torch.Tensor, np.ndarray],
             input_stats_dict: Dict[str, Union[torch.Tensor, np.ndarray]]):
-        """Create normalizer with manual scale/offset parameters."""
         def to_tensor(x):
             if not isinstance(x, torch.Tensor):
                 x = torch.from_numpy(x)
             x = x.flatten()
             return x
 
-        # check
         for x in [offset] + list(input_stats_dict.values()):
             assert x.shape == scale.shape
             assert x.dtype == scale.dtype
@@ -233,7 +208,6 @@ class SingleFieldLinearNormalizer(DictOfTensorMixin):
 
     @classmethod
     def create_identity(cls, dtype=torch.float32):
-        """Create identity normalizer (no transformation)."""
         scale = torch.tensor([1], dtype=dtype)
         offset = torch.tensor([0], dtype=dtype)
         input_stats_dict = {
@@ -245,28 +219,20 @@ class SingleFieldLinearNormalizer(DictOfTensorMixin):
         return cls.create_manual(scale, offset, input_stats_dict)
 
     def normalize(self, x: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
-        """Normalize input data."""
         return _normalize(x, self.params_dict, forward=True)
 
     def unnormalize(self, x: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
-        """Unnormalize (denormalize) data."""
         return _normalize(x, self.params_dict, forward=False)
 
     def get_input_stats(self):
-        """Get input statistics."""
         return self.params_dict['input_stats']
 
     def get_output_stats(self):
-        """Get output statistics after normalization."""
         return dict_apply(self.params_dict['input_stats'], self.normalize)
 
     def __call__(self, x: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
         return self.normalize(x)
 
-
-# ==============================================================================
-# Helper Functions
-# ==============================================================================
 
 def _fit(data: Union[torch.Tensor, np.ndarray],
         last_n_dims=1,
@@ -276,50 +242,40 @@ def _fit(data: Union[torch.Tensor, np.ndarray],
         output_min=-1.,
         range_eps=1e-4,
         fit_offset=True):
-    """Fit normalization parameters to data."""
     assert mode in ['limits', 'gaussian']
     assert last_n_dims >= 0
     assert output_max > output_min
 
-    # convert data to torch and type
     if isinstance(data, np.ndarray):
         data = torch.from_numpy(data)
     if dtype is not None:
         data = data.type(dtype)
 
-    # convert shape
     dim = 1
     if last_n_dims > 0:
         dim = np.prod(data.shape[-last_n_dims:])
     data = data.reshape(-1, dim)
 
-    # compute input stats min max mean std
     input_min, _ = data.min(axis=0)
     input_max, _ = data.max(axis=0)
     input_mean = data.mean(axis=0)
     input_std = data.std(axis=0)
 
-    # compute scale and offset
     if mode == 'limits':
         if fit_offset:
-            # unit scale
             input_range = input_max - input_min
             ignore_dim = input_range < range_eps
             input_range[ignore_dim] = output_max - output_min
             scale = (output_max - output_min) / input_range
             offset = output_min - scale * input_min
             offset[ignore_dim] = (output_max + output_min) / 2 - input_min[ignore_dim]
-            # ignore dims scaled to mean of output max and min
         else:
-            # use this when data is pre-zero-centered.
             assert output_max > 0
             assert output_min < 0
-            # unit abs
             output_abs = min(abs(output_min), abs(output_max))
             input_abs = torch.maximum(torch.abs(input_min), torch.abs(input_max))
             ignore_dim = input_abs < range_eps
             input_abs[ignore_dim] = output_abs
-            # don't scale constant channels
             scale = output_abs / input_abs
             offset = torch.zeros_like(input_mean)
     elif mode == 'gaussian':
@@ -333,7 +289,6 @@ def _fit(data: Union[torch.Tensor, np.ndarray],
         else:
             offset = torch.zeros_like(input_mean)
 
-    # save
     this_params = nn.ParameterDict({
         'scale': scale,
         'offset': offset,
@@ -350,7 +305,6 @@ def _fit(data: Union[torch.Tensor, np.ndarray],
 
 
 def _normalize(x, params, forward=True):
-    """Apply normalization transformation."""
     assert 'scale' in params
     if isinstance(x, np.ndarray):
         x = torch.from_numpy(x)

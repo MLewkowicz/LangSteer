@@ -1,13 +1,13 @@
-"""PointNet-based encoder for DP3 policy.
+"""PointNet-based encoder for point cloud processing.
 
-Extracted from:
-- diffusion_policy_3d/model/vision/pointnet_extractor.py
+Provides PointNet encoders that combine point cloud encoding with agent state
+processing. Used by trajectory forecasters and other modules that need point
+cloud feature extraction.
 """
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from typing import Optional, Dict, Tuple, Union, List, Type
+from typing import Dict, List, Type
 from termcolor import cprint
 
 
@@ -63,14 +63,6 @@ class PointNetEncoderXYZRGB(nn.Module):
                  final_norm: str = 'none',
                  use_projection: bool = True,
                  **kwargs):
-        """
-        Args:
-            in_channels: feature size of input (typically 6 for XYZ+RGB)
-            out_channels: output feature dimension
-            use_layernorm: whether to use LayerNorm in MLP
-            final_norm: normalization for final projection ('layernorm' or 'none')
-            use_projection: whether to use final projection layer
-        """
         super().__init__()
         block_channel = [64, 128, 256, 512]
         cprint("pointnet use_layernorm: {}".format(use_layernorm), 'cyan')
@@ -100,15 +92,8 @@ class PointNetEncoderXYZRGB(nn.Module):
             raise NotImplementedError(f"final_norm: {final_norm}")
 
     def forward(self, x):
-        """
-        Args:
-            x: (B, N, C) point cloud tensor
-
-        Returns:
-            (B, out_channels) global feature vector
-        """
         x = self.mlp(x)
-        x = torch.max(x, 1)[0]  # Global max pooling
+        x = torch.max(x, 1)[0]
         x = self.final_projection(x)
         return x
 
@@ -123,14 +108,6 @@ class PointNetEncoderXYZ(nn.Module):
                  final_norm: str = 'none',
                  use_projection: bool = True,
                  **kwargs):
-        """
-        Args:
-            in_channels: feature size of input (must be 3 for XYZ)
-            out_channels: output feature dimension
-            use_layernorm: whether to use LayerNorm in MLP
-            final_norm: normalization for final projection ('layernorm' or 'none')
-            use_projection: whether to use final projection layer
-        """
         super().__init__()
         block_channel = [64, 128, 256]
         cprint("[PointNetEncoderXYZ] use_layernorm: {}".format(use_layernorm), 'cyan')
@@ -166,23 +143,15 @@ class PointNetEncoderXYZ(nn.Module):
             cprint("[PointNetEncoderXYZ] not use projection", "yellow")
 
     def forward(self, x):
-        """
-        Args:
-            x: (B, N, 3) point cloud tensor with XYZ coordinates
-
-        Returns:
-            (B, out_channels) global feature vector
-        """
         x = self.mlp(x)
-        x = torch.max(x, 1)[0]  # Global max pooling
+        x = torch.max(x, 1)[0]
         x = self.final_projection(x)
         return x
 
 
-class DP3Encoder(nn.Module):
+class PointNetEncoder(nn.Module):
     """
-    Main encoder for DP3 policy.
-    Combines point cloud encoding (via PointNet) with agent state processing.
+    Encoder that combines point cloud encoding (via PointNet) with agent state processing.
     """
 
     def __init__(self,
@@ -195,20 +164,6 @@ class DP3Encoder(nn.Module):
                  use_pc_color=False,
                  pointnet_type='pointnet',
                  ):
-        """
-        Args:
-            observation_space: Dictionary defining observation shapes
-                - 'point_cloud': [num_points, channels]
-                - 'agent_pos': [state_dim]
-                - 'imagin_robot': [num_points, channels] (optional)
-            img_crop_shape: Unused, kept for compatibility
-            out_channel: Total output dimension (PointNet output + state MLP output)
-            state_mlp_size: Architecture for agent state MLP
-            state_mlp_activation_fn: Activation function for state MLP
-            pointcloud_encoder_cfg: Config dict for PointNet encoder
-            use_pc_color: Whether to use RGB colors (6 channels) or just XYZ (3 channels)
-            pointnet_type: Type of PointNet encoder ('pointnet' only supported)
-        """
         super().__init__()
         self.imagination_key = 'imagin_robot'
         self.state_key = 'agent_pos'
@@ -224,14 +179,13 @@ class DP3Encoder(nn.Module):
         else:
             self.imagination_shape = None
 
-        cprint(f"[DP3Encoder] point cloud shape: {self.point_cloud_shape}", "yellow")
-        cprint(f"[DP3Encoder] state shape: {self.state_shape}", "yellow")
-        cprint(f"[DP3Encoder] imagination point shape: {self.imagination_shape}", "yellow")
+        cprint(f"[PointNetEncoder] point cloud shape: {self.point_cloud_shape}", "yellow")
+        cprint(f"[PointNetEncoder] state shape: {self.state_shape}", "yellow")
+        cprint(f"[PointNetEncoder] imagination point shape: {self.imagination_shape}", "yellow")
 
         self.use_pc_color = use_pc_color
         self.pointnet_type = pointnet_type
 
-        # Initialize PointNet encoder
         if pointnet_type == "pointnet":
             if use_pc_color:
                 pointcloud_encoder_cfg['in_channels'] = 6
@@ -242,9 +196,8 @@ class DP3Encoder(nn.Module):
         else:
             raise NotImplementedError(f"pointnet_type: {pointnet_type}")
 
-        # Initialize state MLP
         if len(state_mlp_size) == 0:
-            raise RuntimeError(f"State mlp size is empty")
+            raise RuntimeError("State mlp size is empty")
         elif len(state_mlp_size) == 1:
             net_arch = []
         else:
@@ -255,40 +208,21 @@ class DP3Encoder(nn.Module):
         self.state_mlp = nn.Sequential(*create_mlp(
             self.state_shape[0], output_dim, net_arch, state_mlp_activation_fn))
 
-        cprint(f"[DP3Encoder] output dim: {self.n_output_channels}", "red")
+        cprint(f"[PointNetEncoder] output dim: {self.n_output_channels}", "red")
 
     def forward(self, observations: Dict) -> torch.Tensor:
-        """
-        Encode observations to feature vector.
-
-        Args:
-            observations: Dictionary containing:
-                - 'point_cloud': (B, N, C) point cloud
-                - 'agent_pos': (B, state_dim) agent state
-                - 'imagin_robot': (B, N_img, C) optional imagined robot points
-
-        Returns:
-            (B, n_output_channels) concatenated feature vector
-        """
         points = observations[self.point_cloud_key]
         assert len(points.shape) == 3, cprint(f"point cloud shape: {points.shape}, length should be 3", "red")
 
-        # Concatenate imagined robot points if available
         if self.use_imagined_robot:
-            img_points = observations[self.imagination_key][..., :points.shape[-1]]  # align the last dim
+            img_points = observations[self.imagination_key][..., :points.shape[-1]]
             points = torch.concat([points, img_points], dim=1)
 
-        # Encode point cloud
-        pn_feat = self.extractor(points)  # (B, out_channel)
-
-        # Encode agent state
+        pn_feat = self.extractor(points)
         state = observations[self.state_key]
-        state_feat = self.state_mlp(state)  # (B, state_mlp_out_dim)
-
-        # Concatenate features
+        state_feat = self.state_mlp(state)
         final_feat = torch.cat([pn_feat, state_feat], dim=-1)
         return final_feat
 
     def output_shape(self):
-        """Get output feature dimension."""
         return self.n_output_channels

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LangSteer is a research framework for language-conditioned diffusion policy steering on robotic manipulation benchmarks. It modifies the diffusion denoising process at inference time using external guidance (reference trajectories, dynamics models) without retraining the base policy. Currently targets the CALVIN benchmark with DP3 diffusion policies.
+LangSteer is a research framework for language-conditioned diffusion policy steering on robotic manipulation benchmarks. It modifies the diffusion denoising process at inference time using external guidance (reference trajectories, LLM-generated value maps) without retraining the base policy. Currently targets the CALVIN benchmark with 3D Diffuser Actor policies.
 
 ## Common Commands
 
@@ -16,17 +16,11 @@ uv sync
 uv run python scripts/run_experiment.py
 uv run python scripts/run_experiment.py steering=tweedie env.task=open_drawer
 
-# Train DP3 policy
-uv run python scripts/train_dp3.py training=dp3_calvin
+# Run with VoxPoser steering
+uv run python scripts/run_experiment.py steering=voxposer env.task=open_drawer
 
-# Train with debug config (10 epochs, small batch)
-uv run python scripts/train_dp3.py training=dp3_debug
-
-# SLURM distributed training
-sbatch scripts/slurm_train_dp3.sh
-
-# Convert CALVIN dataset to Zarr format
-uv run python scripts/convert_calvin_to_zarr.py
+# Train Diffuser Actor
+uv run python scripts/train_diffuser_actor.py training=diffuser_actor_calvin
 
 # Code quality
 ruff format .
@@ -53,16 +47,16 @@ Experiments are composed via **Hydra configs** in `conf/`. The main config (`con
 
 Entry points:
 - `scripts/run_experiment.py` — inference/evaluation loop
-- `scripts/train_dp3.py` — DP3 training entry point
+- `scripts/train_diffuser_actor.py` — Diffuser Actor training entry point
 
-### Policy: DP3 (`policies/`)
+### Policy: 3D Diffuser Actor (`policies/`)
 
-`policies/dp3.py` wraps the diffusion model components in `policies/dp3_components/`. Key details:
-- Uses a deque-based observation history buffer (length = `obs_horizon`)
-- `dp3_components/dp3_policy.py` contains the core diffusion architecture (conditional denoising with U-Net)
-- `dp3_components/encoder.py` has PointNet-based point cloud encoders
-- `dp3_components/normalizer.py` handles input/output normalization with learnable stats
-- Checkpoint loading supports multiple legacy formats with fallbacks
+`policies/diffuser_actor.py` wraps the model components in `policies/diffuser_actor_components/`. Key details:
+- Uses a deque-based gripper history buffer (length = `nhist`)
+- Dual noise schedulers: position (scaled_linear) + rotation (squaredcos_cap_v2), both epsilon prediction
+- Converts CALVIN observations to model format: RGB crops, per-pixel PCD, gripper history (quat wxyz), CLIP text embeddings
+- Output: 20-step trajectories converted from 6D rotation + relative coords to euler + absolute poses
+- `gripper_loc_bounds` are normalization bounds for gripper-centric coords, NOT absolute workspace bounds
 
 ### Environment: CALVIN (`envs/`)
 
@@ -75,11 +69,13 @@ Entry points:
 
 ### Steering (`steering/`)
 
-`steering/tweedie.py` implements Tweedie guidance — uses Tweedie's formula for x₀ prediction from xₜ, then computes gradient guidance toward reference trajectories. Supports timestep-scaled guidance.
+`steering/tweedie.py` implements Tweedie guidance — uses Tweedie's formula for x_0 prediction from x_t, then computes analytical gradient guidance toward reference trajectories in epsilon space. Operates with dual schedulers (position/rotation).
+
+`steering/voxposer_steering.py` implements VoxPoser guidance — uses LLM-generated 3D spatial value maps (affordance + avoidance) to guide the denoising process via precomputed gradient fields.
 
 ### Training (`training/`)
 
-`training/policies/dp3/trainer.py` — DP3TrainingWorkspace with multi-GPU DDP, checkpoint management (top-K by validation loss), EMA support, and WandB logging. Dataset loading and Zarr preprocessing live alongside the trainer.
+`training/policies/diffuser_actor/` — Diffuser Actor training with dataset loading, preprocessing, and SLURM support.
 
 ### Forecasters (`forecasters/`)
 
@@ -88,8 +84,6 @@ Trajectory forecasting for steering guidance. `TrajectoryForecaster` (neural) an
 ## Environment Variables
 
 - `CALVIN_DATASET_PATH` — path to CALVIN dataset (task_D_D split)
-- `DP3_CHECKPOINT_PATH` — path to trained DP3 checkpoint
-- `CALVIN_ZARR_PATH` — path to Zarr-converted dataset for training
 
 ## Key Conventions
 

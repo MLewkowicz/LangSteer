@@ -15,16 +15,17 @@ class BaseSteering(ABC):
         self.cfg = cfg
 
     @abstractmethod
-    def get_guidance(self, current_sample: torch.Tensor, timestep: int, obs_embedding: Any) -> torch.Tensor:
+    def get_guidance(self, current_sample: torch.Tensor, timestep: int,
+                     obs_embedding: Any, model_output: torch.Tensor) -> torch.Tensor:
         """
-        Calculates the guidance signal (e.g., gradient of energy function) 
-        to be added to the noise prediction.
-        
+        Calculates the guidance signal to be added to the noise prediction.
+
         Args:
             current_sample: The noisy latents/trajectory at current diffusion step.
             timestep: The current diffusion timestep.
             obs_embedding: Context from the observation (e.g., condition features).
-            
+            model_output: The model's prediction (epsilon or x_0).
+
         Returns:
             torch.Tensor: The guidance gradient or offset vector.
         """

@@ -9,8 +9,8 @@ import torch
 import torch.nn as nn
 
 from forecasters.base_forecaster import BaseForecaster
-from policies.dp3_components.positional_embed import SinusoidalPosEmb
-from policies.dp3_components.encoder import DP3Encoder
+from policies.diffuser_actor_components.position_encodings import SinusoidalPosEmb
+from utils.pointnet_encoder import PointNetEncoder
 
 
 class TrajectoryForecaster(BaseForecaster, nn.Module):
@@ -27,13 +27,13 @@ class TrajectoryForecaster(BaseForecaster, nn.Module):
         4. Decoder: MLP to predict clean trajectory
 
     Args:
-        obs_encoding_dim: Dimension of observation encoding (e.g., 320 for DP3)
+        obs_encoding_dim: Dimension of observation encoding
         trajectory_dim: Action dimension (e.g., 7 for CALVIN)
         horizon: Prediction horizon (e.g., 16)
         time_embed_dim: Timestep embedding dimension (default: 128)
         traj_encoder_type: "mlp" or "conv1d" (default: "mlp")
         hidden_dims: List of hidden layer dimensions for decoder (default: [512, 512, 256])
-        encoder: Optional DP3Encoder for observation encoding (default: None, expects pre-computed encodings)
+        encoder: Optional PointNetEncoder for observation encoding (default: None, expects pre-computed encodings)
         use_layernorm: Whether to use LayerNorm in MLPs (default: False)
 
     Example:
@@ -55,7 +55,7 @@ class TrajectoryForecaster(BaseForecaster, nn.Module):
         time_embed_dim: int = 128,
         traj_encoder_type: str = "mlp",
         hidden_dims: Optional[List[int]] = None,
-        encoder: Optional[DP3Encoder] = None,
+        encoder: Optional[PointNetEncoder] = None,
         use_layernorm: bool = False,
     ):
         """

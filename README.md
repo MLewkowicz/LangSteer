@@ -1,14 +1,14 @@
 # LangSteer: Language-Conditioned Diffusion Policy Steering
 
-A modular, scalable research framework for evaluating language-conditioned diffusion policies with inference-time steering guidance on robotic manipulation benchmarks.
+A research framework for language-conditioned diffusion policy steering on robotic manipulation benchmarks. Modifies the diffusion denoising process at inference time using external guidance without retraining the base policy.
 
 ## Overview
 
-LangSteer enables **steering** — modifying the diffusion denoising process at inference time using external guidance (e.g., reference trajectories, dynamics models) without retraining the base policy. The framework supports:
+LangSteer enables **steering** — modifying the diffusion denoising process at inference time using external guidance (e.g., reference trajectories, spatial value maps) without retraining the base policy. The framework supports:
 
-- **Policies**: DP3, DiffuserActor (extensible to new models)
-- **Environments**: CALVIN, RLBench (extensible to new benchmarks)
-- **Steering Methods**: Tweedie guidance, DynaGuide (extensible to new methods)
+- **Policy**: 3D Diffuser Actor (extensible to new architectures)
+- **Environments**: CALVIN, RLBench, Isaac Sim
+- **Steering Methods**: Tweedie guidance, VoxPoser (LLM-generated value maps)
 
 ## Quick Start
 
@@ -17,25 +17,17 @@ LangSteer enables **steering** — modifying the diffusion denoising process at 
 uv sync
 
 # Run experiment with default settings
-python scripts/run_experiment.py
+uv run python scripts/run_experiment.py
 
 # Run with steering guidance
-python scripts/run_experiment.py steering=tweedie env.task=open_drawer
+uv run python scripts/run_experiment.py steering=tweedie env.task=open_drawer
 
-# Visualize rollout in PyBullet
-python scripts/run_experiment.py visualization.render=true
+# Run with VoxPoser steering
+uv run python scripts/run_experiment.py steering=voxposer env.task=open_drawer
 
-# Train DP3 policy
-python scripts/train_dp3.py training=training/policies/dp3/calvin
+# Train Diffuser Actor
+uv run python scripts/train_diffuser_actor.py training=diffuser_actor_calvin
 ```
-
-## Architecture
-
-LangSteer follows three core principles:
-
-1. **Interface Segregation**: Core logic relies on abstract interfaces ([core/](core/)), not concrete implementations
-2. **Composition over Inheritance**: Experiments composed dynamically via Hydra configs
-3. **Standardization**: All components communicate via strict `Observation` and `Action` DTOs
 
 ## Repository Structure
 
@@ -43,13 +35,10 @@ LangSteer follows three core principles:
 LangSteer/
 ├── conf/                          # Hydra configuration
 │   ├── config.yaml                # Main entry point
-│   ├── env/                       # Environment configs (CALVIN, RLBench)
-│   ├── policy/                    # Policy configs (DP3, etc.)
-│   ├── steering/                  # Steering configs (Tweedie, DynaGuide)
-│   ├── visualization/             # Visualization settings
+│   ├── env/                       # Environment configs
+│   ├── policy/                    # Policy configs (diffuser_actor)
+│   ├── steering/                  # Steering configs (tweedie, voxposer)
 │   └── training/                  # Training configurations
-│       ├── policies/dp3/          # DP3 training configs
-│       └── forecasters/           # Forecaster training configs
 │
 ├── core/                          # Abstract interfaces & types
 │   ├── types.py                   # Observation, Action DTOs
@@ -59,108 +48,32 @@ LangSteer/
 │
 ├── envs/                          # Environment adapters
 │   ├── calvin.py                  # CALVIN adapter
-│   └── calvin_utils/              # CALVIN-specific utilities
+│   ├── rlbench.py                 # RLBench adapter
+│   └── isaac_sim.py               # Isaac Sim adapter
 │
 ├── policies/                      # Policy implementations
-│   ├── dp3.py                     # DP3 policy wrapper
-│   └── dp3_components/            # DP3 architecture components
+│   ├── diffuser_actor.py          # Diffuser Actor wrapper
+│   └── diffuser_actor_components/ # Model architecture
 │
 ├── steering/                      # Steering methods
-│   ├── tweedie.py                 # Tweedie guidance
-│   └── dynaguide.py               # Dynamics-based guidance
+│   ├── tweedie.py                 # Tweedie analytical guidance
+│   └── voxposer_steering.py       # VoxPoser value-map guidance
+│
+├── voxposer/                      # VoxPoser LLM value map generation
 │
 ├── forecasters/                   # Trajectory forecaster models
-│   ├── trajectory_forecaster.py   # Neural forecaster
-│   └── tweedie_forecaster.py      # Analytical forecaster
 │
 ├── training/                      # Training infrastructure
-│   ├── common/                    # Shared utilities (EMA, checkpointing)
-│   ├── policies/dp3/              # DP3 training
-│   │   ├── trainer.py             # Training workspace
-│   │   ├── dataset.py             # CALVIN dataset loader
-│   │   └── preprocessing/         # Data preprocessing
-│   └── forecasters/trajectory/    # Forecaster training
-│
-├── visualization/                 # Unified visualization system
-│   ├── manager.py                 # VisualizationManager
-│   ├── config.py                  # Visualization configs
-│   └── renderers/                 # Camera, PyBullet, Plotly renderers
-│
-├── utils/                         # Utilities
-│   ├── rollout/                   # Episode runner & data collection
-│   ├── state_management/          # Environment snapshots
-│   └── reference_trajectory_loader.py
+│   ├── common/                    # Shared utilities
+│   ├── policies/diffuser_actor/   # Diffuser Actor training
+│   └── forecasters/               # Forecaster training
 │
 ├── scripts/                       # Entry points
 │   ├── run_experiment.py          # Main evaluation loop
-│   ├── train_dp3.py               # DP3 training entry point
-│   └── slurm_train_dp3.sh         # SLURM job submission
-│
-├── docs/                          # Documentation
-│   ├── guides/                    # How-to guides
-│   │   ├── experiments.md         # Running experiments
-│   │   ├── training.md            # Training models
-│   │   └── visualization.md       # Visualization system
-│   └── reference/                 # Reference docs
-│       ├── forecasters.md         # Forecaster documentation
-│       └── rollout.md             # Rollout system
+│   └── train_diffuser_actor.py    # Training entry point
 │
 ├── SETUP.md                       # Installation guide
 └── README.md                      # This file
-```
-
-## Key Features
-
-### Unified Visualization System
-
-Replace multiple visualization scripts with a single config-driven interface:
-
-```bash
-# Camera feeds
-python scripts/run_experiment.py visualization.cameras=true
-
-# PyBullet GUI rendering
-python scripts/run_experiment.py visualization.render=true
-
-# 3D trajectory analysis
-python scripts/run_experiment.py visualization.trajectory_3d=true
-
-# Combine multiple modes
-python scripts/run_experiment.py \
-    visualization.render=true \
-    visualization.cameras=true
-```
-
-See [docs/guides/visualization.md](docs/guides/visualization.md) for details.
-
-### Scalable Training Structure
-
-Organized by model type for easy expansion:
-
-```bash
-# Train DP3
-python scripts/train_dp3.py
-
-# Train forecaster
-python -m training.forecasters.trajectory.trainer
-
-# Add new model → training/policies/<model_name>/
-```
-
-See [docs/guides/training.md](docs/guides/training.md) for details.
-
-### Steering Methods
-
-Modify policy behavior at inference time without retraining:
-
-```bash
-# Tweedie guidance (analytical, no training)
-python scripts/run_experiment.py steering=tweedie
-
-# Custom guidance strength
-python scripts/run_experiment.py \
-    steering=tweedie \
-    steering.guidance_strength=2.0
 ```
 
 ## Core Components
@@ -181,72 +94,17 @@ python scripts/run_experiment.py \
 All experiments configured via Hydra YAML files in [conf/](conf/):
 
 ```bash
-# Override via command line
-python scripts/run_experiment.py \
+uv run python scripts/run_experiment.py \
     env=calvin \
-    policy=dp3 \
     steering=tweedie \
-    env.task=open_drawer
-
-# Or create custom experiment configs
-python scripts/run_experiment.py experiment=my_experiment
+    env.task=open_drawer \
+    steering.guidance_strength=2.0
 ```
 
-## Documentation
+## Adding New Components
 
-- **[Setup Guide](SETUP.md)** - Installation and environment setup
-- **[Experiments Guide](docs/guides/experiments.md)** - Running experiments
-- **[Training Guide](docs/guides/training.md)** - Training policies and forecasters
-- **[Visualization Guide](docs/guides/visualization.md)** - Visualization system
-- **[Forecasters Reference](docs/reference/forecasters.md)** - Forecaster models
+**New Policy:** Implement `BasePolicy`, add wrapper in `policies/`, config in `conf/policy/`
 
-## Development
+**New Environment:** Implement `BaseEnvironment`, add adapter in `envs/`, config in `conf/env/`
 
-### Dependencies
-
-Managed via `uv`:
-```bash
-uv sync
-```
-
-### Code Quality
-
-```bash
-# Type checking
-mypy .
-
-# Formatting
-ruff format .
-ruff check .
-```
-
-### Adding New Components
-
-**New Policy:**
-1. Implement `BasePolicy` interface
-2. Add policy wrapper in `policies/`
-3. Create config in `conf/policy/`
-
-**New Environment:**
-1. Implement `BaseEnvironment` interface
-2. Add environment adapter in `envs/`
-3. Create config in `conf/env/`
-
-**New Steering Method:**
-1. Implement `BaseSteering` interface
-2. Add steering module in `steering/`
-3. Create config in `conf/steering/`
-
-## Citation
-
-```bibtex
-@misc{langsteer2025,
-  title={LangSteer: Language-Conditioned Diffusion Policy Steering},
-  author={Your Name},
-  year={2025}
-}
-```
-
-## License
-
-[Add license information]
+**New Steering Method:** Implement `BaseSteering`, add module in `steering/`, config in `conf/steering/`
