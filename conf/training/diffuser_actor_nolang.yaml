@@ -20,6 +20,9 @@ dataset:
   val_path: "${oc.env:CALVIN_3DA_DATASET_PATH,/home/mlewkowicz/LangSteer/cache/diffuser_actor_data}/validation"
   instructions_path: null
   taskvar:
+    - ["A", 0]
+    - ["B", 0]
+    - ["C", 0]
     - ["D", 0]
   interpolation_length: 20  # original used 20, not 100
 

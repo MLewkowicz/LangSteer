@@ -71,13 +71,13 @@ except ImportError as exc:
 # CONFIGURATION — edit these or override via env vars listed above
 # =============================================================================
 
-BUCKET_NAME    = os.environ.get("LANGSTEER_BUCKET",        "calvin-abcd-dataset-bucket")
-DATA_PREFIX    = os.environ.get("LANGSTEER_DATA_PREFIX",   "langsteer/diffuser_actor_data")
-SAGEMAKER_ROLE = os.environ.get("LANGSTEER_SAGEMAKER_ROLE","arn:aws:iam::317694661330:role/SageMakerExecutionRole")
+BUCKET_NAME    = "calvin-abcd-dataset-bucket"
+DATA_PREFIX    = "calvin"
+SAGEMAKER_ROLE = "arn:aws:iam::317694661330:role/SageMakerExecutionRole"
 MODEL_PREFIX   = "langsteer/models/diffuser_actor_nolang"
-INSTANCE_TYPE  = os.environ.get("LANGSTEER_INSTANCE_TYPE", "ml.g6e.8xlarge")
-TRAINING_IMAGE = os.environ.get("LANGSTEER_TRAINING_IMAGE","")
-MAX_RUNTIME    = int(os.environ.get("LANGSTEER_MAX_RUNTIME","86400"))
+INSTANCE_TYPE  = "ml.g6e.8xlarge"
+TRAINING_IMAGE = ""
+MAX_RUNTIME    = 259200
 
 # W&B and misc vars forwarded from the submit env into the container
 JOB_ENV_KEYS = (
@@ -106,7 +106,7 @@ REPO_ROOT = _repo_root
 
 IGNORE_PATTERNS = [
     ".git", "__pycache__", "*.pyc",
-    ".env", ".venv", "venv", "env",
+    ".env", ".venv", "venv",
     ".DS_Store", "data", "cache", "outputs",
     "*.ipynb", ".ipynb_checkpoints", "uv.lock",
 ]
