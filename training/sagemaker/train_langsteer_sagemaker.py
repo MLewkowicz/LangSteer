@@ -83,11 +83,35 @@ def _find_data_root(channel: Path) -> Path:
     ]
     for p in candidates:
         if (p / "training").is_dir() and (p / "validation").is_dir():
+            print(f"[data] Found dataset root: {p}", flush=True)
+            _log_task_directories(p)
             return p
     raise FileNotFoundError(
         f"Could not find training/ and validation/ under {channel}. "
         f"Tried: {[str(c) for c in candidates]}"
     )
+
+
+def _log_task_directories(data_root: Path) -> None:
+    """Print which ABCD task directories are present under training/ and validation/."""
+    expected_tasks = ["A+0", "B+0", "C+0", "D+0"]
+    for split in ("training", "validation"):
+        split_dir = data_root / split
+        found, missing = [], []
+        for t in expected_tasks:
+            td = split_dir / t
+            if td.is_dir():
+                n = len(list(td.glob("*.dat"))) + len(list(td.glob("*.npy")))
+                found.append(f"{t}({n} files)")
+            else:
+                missing.append(t)
+        print(f"[data] {split}/  found: {found or 'none'}  missing: {missing or 'none'}", flush=True)
+    if missing:
+        print(
+            "[data] WARNING: missing task directories will be silently skipped by the "
+            "dataset loader — training will only see available tasks.",
+            flush=True,
+        )
 
 
 def _maybe_install_flash_attn() -> None:

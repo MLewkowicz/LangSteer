@@ -2,6 +2,9 @@
 # Inherits from diffuser_actor_calvin with language modules disabled.
 # This produces a structurally smaller model (no language attention layers).
 # Checkpoints are NOT compatible with language-conditioned models.
+#
+# AWS ABCD run: SageMaker overrides train_iters=600000 and checkpoint_dir.
+# Local D-only smoke test: train_iters=20000 (default here).
 
 defaults:
   - diffuser_actor_calvin
@@ -11,10 +14,8 @@ policy:
   use_instruction: false
   lang_enhanced: false
 
-# Data paths (preprocessed with open_drawer + move_slider_left)
-# Scaled to dataset size (303 episodes vs ~20K+ in the original full CALVIN run).
-# original: 600K iters × batch 30 / ~20K episodes ≈ 900 passes through data
-# ours:      20K iters × batch 16 /   303 episodes ≈ 1,056 passes through data
+# All four CALVIN scenes — data paths resolved from CALVIN_3DA_DATASET_PATH env var.
+# cache_size: 0 inherited from diffuser_actor_calvin (matches original --cache_size 0).
 dataset:
   train_path: "${oc.env:CALVIN_3DA_DATASET_PATH,/home/mlewkowicz/LangSteer/cache/diffuser_actor_data}/training"
   val_path: "${oc.env:CALVIN_3DA_DATASET_PATH,/home/mlewkowicz/LangSteer/cache/diffuser_actor_data}/validation"
@@ -24,10 +25,10 @@ dataset:
     - ["B", 0]
     - ["C", 0]
     - ["D", 0]
-  interpolation_length: 20  # original used 20, not 100
 
+# Local default: small run for smoke-testing.
+# SageMaker overrides this to 600000 via hyperparameter injection.
 train_iters: 20000
-lr: 3.0e-4
 
 # Override checkpoint/experiment naming
 checkpoint_dir: "outputs/checkpoints/diffuser_actor_nolang"
