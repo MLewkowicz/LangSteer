@@ -1,10 +1,8 @@
 from typing import Optional
 import numpy as np
-import numba
 from training.common.replay_buffer import ReplayBuffer
 
 
-@numba.jit(nopython=True)
 def create_indices(
     episode_ends:np.ndarray, sequence_length:int,
     episode_mask: np.ndarray,

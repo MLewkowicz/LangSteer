@@ -1,0 +1,3 @@
+# Laptop / CI: only for submit_langsteer_training.py (not the SageMaker training container).
+sagemaker>=3.0
+boto3

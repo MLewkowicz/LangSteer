@@ -5,6 +5,7 @@ Adapted from 3d_diffuser_actor/engine.py + main_trajectory_calvin.py.
 """
 
 import io
+import math
 import os
 import logging
 import pickle
@@ -85,6 +86,9 @@ class DiffuserActorTrainingWorkspace:
         self.optimizer = self._build_optimizer(
             self.model.module if self.is_distributed else self.model, cfg
         )
+
+        # Cosine LR schedule with linear warmup
+        self.scheduler = self._build_scheduler(self.optimizer, cfg)
 
         # Training state
         self.global_step = 0
@@ -202,6 +206,25 @@ class DiffuserActorTrainingWorkspace:
                 optimizer_grouped_parameters[1]["params"].append(param)
         return optim.AdamW(optimizer_grouped_parameters)
 
+    def _build_scheduler(self, optimizer: optim.Optimizer, cfg: DictConfig):
+        """Cosine LR schedule with linear warmup.
+
+        Warms up linearly from 0 → lr over lr_warmup_steps steps, then decays
+        via cosine to lr * 0.01 by the end of training.
+        """
+        warmup_steps = cfg.get("lr_warmup_steps", 2000)
+        total_steps = cfg.train_iters
+        min_lr_ratio = 0.01  # final lr = lr * min_lr_ratio
+
+        def lr_lambda(step: int) -> float:
+            if step < warmup_steps:
+                return float(step) / float(max(1, warmup_steps))
+            progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+            cosine_val = 0.5 * (1.0 + math.cos(math.pi * progress))
+            return cosine_val * (1.0 - min_lr_ratio) + min_lr_ratio
+
+        return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
     # ------------------------------------------------------------------
     # Data loading
     # ------------------------------------------------------------------
@@ -274,7 +297,13 @@ class DiffuserActorTrainingWorkspace:
         return instructions
 
     def _get_loaders(self, train_dataset, val_dataset, cfg):
-        """Build data loaders with distributed samplers."""
+        """Build data loaders with distributed samplers.
+
+        Returns (train_loader, val_loader, train_sampler).  The sampler is
+        returned so the training loop can call set_epoch() on each restart,
+        which re-shuffles the data ordering and avoids the sampler being
+        frozen at epoch 0 for the entire 600K-step run.
+        """
         def seed_worker(worker_id):
             worker_seed = torch.initial_seed() % 2**32
             np.random.seed(worker_seed)
@@ -310,7 +339,7 @@ class DiffuserActorTrainingWorkspace:
             drop_last=False,
             generator=g,
         )
-        return train_loader, val_loader
+        return train_loader, val_loader, train_sampler
 
     # ------------------------------------------------------------------
     # Training loop
@@ -322,7 +351,7 @@ class DiffuserActorTrainingWorkspace:
 
         # Setup datasets and loaders
         train_dataset, val_dataset = self._get_datasets(cfg)
-        train_loader, val_loader = self._get_loaders(train_dataset, val_dataset, cfg)
+        train_loader, val_loader, train_sampler = self._get_loaders(train_dataset, val_dataset, cfg)
 
         # Checkpoint manager
         topk_manager = None
@@ -336,24 +365,47 @@ class DiffuserActorTrainingWorkspace:
                 k=cfg.get("save_top_k", 3),
             )
 
-        # Resume from checkpoint
-        if cfg.get("checkpoint", None):
-            self._load_checkpoint(cfg.checkpoint)
+        # Resume from checkpoint — uses resume_checkpoint_path from config.
+        # Starting from scratch unless explicitly set; no stale checkpoint is
+        # ever loaded automatically.
+        resume_path = cfg.get("resume_checkpoint_path", None)
+        if cfg.get("resume", False) and resume_path:
+            self._load_checkpoint(resume_path)
+            if self.is_main_process:
+                logger.info(f"Resuming from checkpoint: {resume_path} (step {self.global_step})")
+        else:
+            if self.is_main_process:
+                logger.info("Starting training from scratch (no checkpoint loaded)")
+
+        # Fast-forward the LR scheduler to match global_step after a resume
+        if self.global_step > 0:
+            for _ in range(self.global_step):
+                self.scheduler.step()
 
         # Training loop (iteration-based)
         iter_loader = iter(train_loader)
+        loader_epoch = 0  # tracks DataLoader restarts for set_epoch shuffling
         self.model.train()
         nhist = cfg.policy.get("nhist", 3)
         accumulate_grad = cfg.get("accumulate_grad_batches", 1)
+        grad_clip = cfg.get("grad_clip", 1.0)
 
         if self.is_main_process:
-            logger.info(f"Starting training for {cfg.train_iters} iterations")
+            logger.info(
+                f"Starting training for {cfg.train_iters} iterations "
+                f"(lr={cfg.lr}, warmup={cfg.get('lr_warmup_steps', 2000)}, "
+                f"grad_clip={grad_clip}, wd={cfg.get('wd', 5e-3)})"
+            )
 
         for step_id in trange(self.global_step, cfg.train_iters, disable=not self.is_main_process):
-            # Get next batch
+            # Get next batch; call set_epoch on each DataLoader restart so the
+            # DistributedSampler re-shuffles with a new seed each pass.
             try:
                 sample = next(iter_loader)
             except StopIteration:
+                loader_epoch += 1
+                if train_sampler is not None:
+                    train_sampler.set_epoch(loader_epoch)
                 iter_loader = iter(train_loader)
                 sample = next(iter_loader)
 
@@ -383,7 +435,12 @@ class DiffuserActorTrainingWorkspace:
             loss.backward()
 
             if step_id % accumulate_grad == accumulate_grad - 1:
+                # Gradient clipping before the optimizer step
+                if grad_clip > 0.0:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=grad_clip)
+
                 self.optimizer.step()
+                self.scheduler.step()
 
                 # EMA update
                 if self.ema_model is not None:
@@ -398,7 +455,7 @@ class DiffuserActorTrainingWorkspace:
                 wandb.log(
                     {
                         "train/loss": loss.item(),
-                        "lr": self.optimizer.param_groups[0]["lr"],
+                        "lr": self.scheduler.get_last_lr()[0],
                     },
                     step=step_id,
                 )
@@ -419,7 +476,7 @@ class DiffuserActorTrainingWorkspace:
                     wandb.log(val_metrics, step=step_id)
 
                 logger.info(
-                    f"Step {step_id} | train_loss={loss.item():.4f} | "
+                    f"Step {step_id} | train_loss={loss.item():.4f} | lr={self.scheduler.get_last_lr()[0]:.2e} | "
                     + " | ".join(f"{k}={v:.4f}" for k, v in val_metrics.items())
                 )
 
@@ -519,6 +576,7 @@ class DiffuserActorTrainingWorkspace:
             "weight": model_ref.state_dict() if not self.is_distributed
                       else self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
+            "scheduler": self.scheduler.state_dict(),
             "iter": step_id + 1,
             "best_loss": self.best_loss,
             "arch_config": {
@@ -557,6 +615,9 @@ class DiffuserActorTrainingWorkspace:
         self.model.load_state_dict(ckpt["weight"])
         if "optimizer" in ckpt:
             self.optimizer.load_state_dict(ckpt["optimizer"])
+            # Keep the resumed LR as-is (scheduler will restore the correct
+            # value when fast-forwarded in train()); override only to guard
+            # against stale checkpoints from a different lr config.
             for pg in self.optimizer.param_groups:
                 pg["lr"] = self.cfg.lr
         self.global_step = ckpt.get("iter", 0)

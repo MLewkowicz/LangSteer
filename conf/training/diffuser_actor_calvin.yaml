@@ -1,51 +1,65 @@
 # 3D Diffuser Actor Training Configuration for CALVIN Dataset
 # Original paper: 600K iters, batch 30, 6 GPUs, all 34 tasks × 4 scenes (~20K episodes)
-# This config is for the two-task small-data regime (303 episodes).
+# Parameter parity target: scripts/train_trajectory_calvin.sh in 3d_diffuser_actor
 
 # Dataset Configuration
 dataset:
   train_path: "${oc.env:CALVIN_3DA_DATASET_PATH,/home/mlewkowicz/LangSteer/cache/diffuser_actor_data}/training"
   val_path: "${oc.env:CALVIN_3DA_DATASET_PATH,/home/mlewkowicz/LangSteer/cache/diffuser_actor_data}/validation"
   instructions_path: "${oc.env:CALVIN_3DA_INSTRUCTIONS_PATH,/home/mlewkowicz/LangSteer/cache/diffuser_actor_data}"
-  max_episode_length: 30  # original uses 30
-  cache_size: 100
-  cache_size_val: 100
+  max_episode_length: 30  # matches original (--max_episode_length 30)
+  cache_size: 0           # matches original (--cache_size 0); no in-memory episode cache
+  cache_size_val: 0       # matches original (--cache_size_val 0)
   max_episodes_per_task: -1
   image_rescale: "0.75,1.25"
   dense_interpolation: true
-  interpolation_length: 20  # original used 20-step trajectories
+  interpolation_length: 20  # matches original (--interpolation_length 20)
   relative_action: true
   taskvar:
     - ["D", 0]
 
-# Policy Architecture
+# Policy Architecture — must match original exactly
 policy:
   backbone: clip
   image_size: [256, 256]
-  embedding_dim: 192
+  embedding_dim: 192           # matches original (-C 192)
   num_vis_ins_attn_layers: 2
   use_instruction: true
-  fps_subsampling_factor: 3    # original uses 3
-  gripper_loc_bounds: [[-0.3021, -0.2569, -0.2156], [0.3613, 0.3377, 0.1837]]  # ABCD union bounds + 0.01 buffer (matches pretrained checkpoint)
-  rotation_parametrization: "6D"
-  quaternion_format: "wxyz"    # original uses wxyz
-  diffusion_timesteps: 25      # original uses 25
-  nhist: 3
-  relative: true
-  lang_enhanced: true
+  fps_subsampling_factor: 3    # matches original (--fps_subsampling_factor 3)
+  # ABCD union gripper bounds + 0.01 buffer.
+  # Computed as union of per-scene bounds from
+  # tasks/calvin_rel_traj_location_bounds_task_ABC_D.json in 3d_diffuser_actor:
+  #   A: min=[-0.269,-0.220,-0.182]  max=[0.351,0.277,0.172]
+  #   B: min=[-0.258,-0.222,-0.206]  max=[0.329,0.292,0.174]
+  #   C: min=[-0.292,-0.247,-0.176]  max=[0.251,0.328,0.164]
+  #   D: min=[-0.251,-0.152,-0.133]  max=[0.192,0.193,0.137]
+  #   Union + 0.01 buffer → below values
+  gripper_loc_bounds: [[-0.3021, -0.2569, -0.2156], [0.3613, 0.3377, 0.1837]]
+  rotation_parametrization: "6D"  # matches original (--rotation_parametrization 6D)
+  quaternion_format: "wxyz"        # matches original (--quaternion_format wxyz)
+  diffusion_timesteps: 25          # matches original (--diffusion_timesteps 25)
+  nhist: 3                         # matches original (--num_history 3)
+  relative: true                   # matches original (--relative_action 1)
+  lang_enhanced: true              # matches original (--lang_enhanced 1)
 
 # Training Hyperparameters
 train_iters: 200000
-batch_size: 16  # Per GPU
-batch_size_val: 4
-num_workers: 1
-lr: 3.0e-4      # original uses 3e-4
-wd: 5.0e-3
+batch_size: 16   # per GPU; original uses 30/GPU × 6 GPUs = 180 global
+batch_size_val: 3  # matches original (--batch_size_val 3)
+num_workers: 4     # matches original (--num_workers 4)
+lr: 3.0e-4       # matches original (lr=3e-4); cosine schedule decays to lr*0.01
+wd: 5.0e-3       # matches original (wd=5e-3)
 accumulate_grad_batches: 1
 
+# LR schedule: linear warmup then cosine decay
+lr_warmup_steps: 2000  # ~0.33% of 600K steps
+
+# Gradient clipping
+grad_clip: 1.0
+
 # Validation
-val_freq: 500  # Validate every N iterations
-log_freq: 10   # Log train/loss to WandB every N steps
+val_freq: 500   # Validate every N iterations
+log_freq: 10    # Log train/loss to WandB every N steps
 
 # EMA (Exponential Moving Average)
 use_ema: true
@@ -59,6 +73,9 @@ device: "cuda"
 seed: 0
 
 # Checkpoint Management
+# Set resume: true and resume_checkpoint_path to a .pth file to resume training.
+# When resume: false (default), training always starts from scratch — no prior
+# checkpoint is ever loaded automatically.
 checkpoint_dir: "outputs/checkpoints/diffuser_actor_calvin"
 save_top_k: 3
 resume: false
