@@ -57,10 +57,20 @@ class DiffuserActorPolicy(BasePolicy):
         nhist = cfg.get("nhist", 1)
         relative = cfg.get("relative", True)
         lang_enhanced = cfg.get("lang_enhanced", True)
+        use_primitive_id = cfg.get("use_primitive_id", False)
+        num_primitives = cfg.get("num_primitives", 4)
+        if use_primitive_id and not use_instruction:
+            raise ValueError(
+                "use_primitive_id=True requires use_instruction=True "
+                "(primitive mode reuses the instruction cross-attention pipeline)."
+            )
 
         self.nhist = nhist
         self.image_size = image_size
         self._use_instruction = use_instruction
+        self._use_primitive_id = use_primitive_id
+        self._num_primitives = num_primitives
+        self._current_primitive_id: Optional[int] = None
         self.camera_names = cfg.get("cameras", ["static", "gripper"])
         self.pred_horizon = cfg.get("pred_horizon", 1)
         self.crop_images = cfg.get("crop_images", True)
@@ -87,6 +97,8 @@ class DiffuserActorPolicy(BasePolicy):
             nhist=nhist,
             relative=relative,
             lang_enhanced=lang_enhanced,
+            use_primitive_id=use_primitive_id,
+            num_primitives=num_primitives,
         )
         self._model.to(self._device)
         self._model.eval()
@@ -143,6 +155,23 @@ class DiffuserActorPolicy(BasePolicy):
     def reset(self) -> None:
         """Clear gripper history buffer."""
         self._gripper_history.clear()
+
+    def set_primitive(self, primitive_id: int) -> None:
+        """Set the current primitive index for primitive-id conditioning mode.
+
+        Called by the steering module when it transitions stages. Raises if the
+        policy was built without use_primitive_id=True.
+        """
+        if not self._use_primitive_id:
+            raise RuntimeError(
+                "set_primitive() called but policy was built with "
+                "use_primitive_id=False. Rebuild with use_primitive_id=True."
+            )
+        if not (0 <= primitive_id < self._num_primitives):
+            raise ValueError(
+                f"primitive_id={primitive_id} out of range [0, {self._num_primitives})"
+            )
+        self._current_primitive_id = int(primitive_id)
 
     def _get_instruction_embedding(self, instruction_text: str) -> torch.Tensor:
         """
@@ -332,7 +361,17 @@ class DiffuserActorPolicy(BasePolicy):
             curr_gripper = self._prepare_gripper(obs)
 
             instr_emb = None
-            if self._use_instruction:
+            if self._use_primitive_id:
+                if self._current_primitive_id is None:
+                    raise RuntimeError(
+                        "Primitive-id mode active but no primitive set. "
+                        "Call policy.set_primitive(idx) before inference."
+                    )
+                instr_emb = torch.tensor(
+                    [[self._current_primitive_id]],
+                    dtype=torch.long, device=self._device,
+                )  # (1, 1)
+            elif self._use_instruction:
                 instr_emb = self._get_instruction_embedding(obs.instruction)
                 instr_emb = instr_emb.unsqueeze(0)  # (1, seq_len, 512)
 
@@ -344,7 +383,9 @@ class DiffuserActorPolicy(BasePolicy):
                 g = curr_gripper[0, -1, :]
                 logger.info(f"[Diag] gripper[-1]: pos={g[:3].cpu().numpy()}, quat={g[3:7].cpu().numpy()}, "
                             f"quat_norm={g[3:7].norm().item():.4f}")
-                if self._use_instruction:
+                if self._use_primitive_id:
+                    logger.info(f"[Diag] primitive_id={self._current_primitive_id}")
+                elif self._use_instruction:
                     logger.info(f"[Diag] instr: shape={instr_emb.shape}, norm={instr_emb.norm().item():.3f}")
                     logger.info(f"[Diag] instruction: '{obs.instruction}'"
                                 f"{' (masked)' if self._mask_language else ''}")

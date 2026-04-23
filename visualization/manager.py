@@ -54,7 +54,7 @@ class VisualizationManager:
         self.matplotlib_renderer = None
         self.plotly_renderer = None
 
-        if config.cameras:
+        if config.cameras or config.video.enabled:
             logger.info("Initializing camera renderer")
             self.camera_renderer = CameraRenderer(config.camera)
 
@@ -167,6 +167,41 @@ class VisualizationManager:
         if self.config.render and self.pybullet_renderer:
             self.pybullet_renderer.render_step(env, action)
 
+    def start_recording(self, episode_id: int):
+        """
+        Start video recording for a new episode.
+
+        Should be called immediately after env.reset(), before the first step.
+
+        Args:
+            episode_id: Episode index used in the output filename.
+        """
+        if self.config.video.enabled and self.camera_renderer:
+            self.camera_renderer.start_video(
+                episode_id=episode_id,
+                save_path=self.config.video.save_path,
+                fps=self.config.video.fps,
+                codec=self.config.video.codec,
+                static_record_width=self.config.video.static_record_width,
+                static_record_height=self.config.video.static_record_height,
+            )
+
+    def record_step(self, obs_rgb: dict):
+        """
+        Write the current camera frames to the open video writers.
+
+        Args:
+            obs_rgb: Dict with camera keys (e.g. 'rgb_static', 'rgb_gripper').
+                     Matches Observation.rgb.
+        """
+        if self.config.video.enabled and self.camera_renderer:
+            self.camera_renderer.write_frame(obs_rgb)
+
+    def stop_recording(self):
+        """Stop video recording and flush/close the video files."""
+        if self.config.video.enabled and self.camera_renderer:
+            self.camera_renderer.stop_video()
+
     def reset(self):
         """Reset all renderers for new episode."""
         if self.camera_renderer:
@@ -187,6 +222,8 @@ class VisualizationManager:
             enabled_modes.append("trajectory_3d")
         if self.config.reference_plot:
             enabled_modes.append("reference_plot")
+        if self.config.video.enabled:
+            enabled_modes.append("video")
 
         if not enabled_modes:
             return "VisualizationManager(no modes enabled)"

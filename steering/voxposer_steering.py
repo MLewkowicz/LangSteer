@@ -18,8 +18,10 @@ preventing guidance from acting on pure-noise early steps where Tweedie
 x_0 predictions are meaningless.
 """
 
+import json
 import logging
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any, Callable, Optional
 
 import numpy as np
 import torch
@@ -29,6 +31,9 @@ from voxposer.calvin_interface import voxel2pc
 from voxposer.lmp import setup_lmp, set_lmp_objects
 from voxposer.value_map import ValueMap
 from voxposer.visualizer import ValueMapVisualizer
+
+# Canonical primitive vocabulary (must match PrimitiveEmbedding training order).
+_PRIMITIVE_VOCAB = {"grasp": 0, "push": 1, "pull": 2, "place": 3}
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +97,18 @@ class VoxPoserSteering(BaseSteering):
         self._visualize = cfg.get('visualize', False)
         self._visualizer: Optional[ValueMapVisualizer] = None
 
+        # Live 3D Dash server
+        self._dash_enabled = cfg.get('costmap_dash', False)
+        self._dash_server = None
+        if self._dash_enabled:
+            from visualization.renderers.costmap_dash import CostmapDashServer
+            self._dash_server = CostmapDashServer(
+                port=cfg.get('costmap_dash_port', 8050),
+                refresh_s=cfg.get('costmap_dash_refresh_s', 2.0),
+                viz_config=cfg,
+            )
+            self._dash_server.start()
+
         # Lazy-init LMP system
         self._lmp_config = cfg
         self._lmps = None
@@ -109,9 +126,26 @@ class VoxPoserSteering(BaseSteering):
             'stage_proximity_threshold', 0.05
         )
 
+        # Primitive-ID conditioning (for primitive-mode Diffuser Actor).
+        # When enabled, VoxPoser reads the task->primitives sequence from
+        # action_primitive_annotations.json and calls `set_primitive_fn(id)`
+        # at each stage transition so the policy swaps its conditioning token.
+        self._set_primitive_fn: Optional[Callable[[int], None]] = None
+        self._task_primitives: list[str] = []  # per-stage primitive names
+        schema_path = cfg.get(
+            'primitive_schema_path',
+            'action_primitive_annotations.json',
+        )
+        self._primitive_schema = self._load_primitive_schema(schema_path)
+
         # Schedulers — set by the policy wrapper before inference
         self.position_scheduler = None
         self.rotation_scheduler = None
+
+        # Dynamic costmap refresh
+        self._refresh_enabled = cfg.get('refresh_costmap', True)
+        self._refresh_interval = cfg.get('refresh_interval', 1)
+        self._steps_since_refresh = 0
 
         self.current_episode_step = 0
         self._robot_obs: Optional[np.ndarray] = None  # cached for visualization
@@ -134,6 +168,24 @@ class VoxPoserSteering(BaseSteering):
     def set_rotation_scheduler(self, scheduler):
         """Store reference to rotation noise scheduler."""
         self.rotation_scheduler = scheduler
+
+    def set_primitive_callback(self, fn: Callable[[int], None]) -> None:
+        """Register a callback invoked at each stage transition with the primitive id.
+
+        Wire with `voxposer.set_primitive_callback(policy.set_primitive)` when
+        using the primitive-id-conditioned Diffuser Actor. Leaving this unset
+        is a no-op (e.g. for CLIP or no-language policies).
+        """
+        self._set_primitive_fn = fn
+
+    @staticmethod
+    def _load_primitive_schema(path: str) -> Optional[dict]:
+        p = Path(path)
+        if not p.is_file():
+            logger.warning(f"Primitive schema not found: {path} (primitive mode disabled)")
+            return None
+        with open(p) as f:
+            return json.load(f).get("task_annotation_schema", {})
 
     def set_current_gripper_pos(self, gripper_pos: np.ndarray):
         """Set current absolute gripper position for relative coordinate conversion.
@@ -162,7 +214,9 @@ class VoxPoserSteering(BaseSteering):
 
     def setup_episode(self, task_name: str, instruction: str = None,
                       robot_obs: np.ndarray = None,
-                      scene_obs: np.ndarray = None):
+                      scene_obs: np.ndarray = None,
+                      fixture_positions: dict = None,
+                      block_aabbs: dict = None):
         """Generate value maps for a new episode via LLM composer.
 
         The composer returns either:
@@ -177,6 +231,8 @@ class VoxPoserSteering(BaseSteering):
             instruction: Natural language instruction (defaults to task_name)
             robot_obs: (15,) robot state for object detection
             scene_obs: (24,) scene state for object detection
+            fixture_positions: Live fixture positions from PyBullet (optional)
+            block_aabbs: Live orientation-aware block AABBs from PyBullet (optional)
 
         Returns:
             (None, None) for compatibility with TweedieSteering interface
@@ -185,15 +241,27 @@ class VoxPoserSteering(BaseSteering):
         self._stages = []
         self._current_stage_idx = 0
         self._current_stage_target = None
+        self._steps_since_refresh = 0
         self._robot_obs = robot_obs
         self._init_lmp_system()
+
+        # Resolve per-stage primitive sequence from the static schema. This
+        # is cheap (a dict lookup); silent fallback to [] means no primitive
+        # calls happen — desirable when the policy isn't primitive-conditioned.
+        if self._primitive_schema is not None:
+            entry = self._primitive_schema.get(task_name)
+            self._task_primitives = list(entry.get("primitives", [])) if entry else []
+        else:
+            self._task_primitives = []
 
         if instruction is None:
             instruction = task_name.replace('_', ' ')
 
         # Update scene state
         if robot_obs is not None and scene_obs is not None:
-            self._lmp_interface.update_state(robot_obs, scene_obs)
+            self._lmp_interface.update_state(
+                robot_obs, scene_obs, fixture_positions, block_aabbs
+            )
 
         # Set object context for LMPs
         object_names = self._lmp_interface.get_object_names()
@@ -226,12 +294,18 @@ class VoxPoserSteering(BaseSteering):
 
         return None, None
 
-    def _activate_stage(self, idx: int):
+    def _activate_stage(self, idx: int, is_refresh: bool = False):
         """Build ValueMap and gradient field for stage `idx`.
 
         Evaluates the lazy map functions, creates a ValueMap, smooths it,
         precomputes gradients, and computes the stage's target position
         (centroid of raw affordance voxels in world space).
+
+        Args:
+            idx: Stage index to activate.
+            is_refresh: If True, skip the (expensive) static HTML visualizer.
+                Set by refresh_costmap() to avoid writing hundreds of HTML
+                files per episode.
         """
         if idx >= len(self._stages):
             logger.warning(f"Stage {idx} out of range (have {len(self._stages)})")
@@ -291,6 +365,23 @@ class VoxPoserSteering(BaseSteering):
 
         self._current_stage_idx = idx
 
+        # Primitive-id conditioning: map stage -> primitive name -> int id -> policy.
+        # Silent no-op if either the callback or the task's primitive list isn't set.
+        if self._set_primitive_fn is not None and self._task_primitives:
+            if idx < len(self._task_primitives):
+                name = self._task_primitives[idx]
+                pid = _PRIMITIVE_VOCAB.get(name)
+                if pid is not None:
+                    self._set_primitive_fn(pid)
+                    logger.info(f"Primitive-id set: stage {idx} -> '{name}' (id={pid})")
+                else:
+                    logger.warning(f"Unknown primitive '{name}' for stage {idx}; skipping set")
+            else:
+                logger.warning(
+                    f"Stage {idx} has no primitive mapping "
+                    f"(task has {len(self._task_primitives)} primitives); skipping set"
+                )
+
         logger.info(
             f"Activated stage {idx}/{len(self._stages) - 1}: "
             f"affordance max={affordance.max():.2f}, "
@@ -298,8 +389,8 @@ class VoxPoserSteering(BaseSteering):
             f"target={self._current_stage_target}"
         )
 
-        # Visualize if enabled
-        if self._visualizer is not None:
+        # Visualize if enabled (skip on refresh to avoid HTML spam)
+        if self._visualizer is not None and not is_refresh:
             ee_pos = (
                 self._robot_obs[:3] if self._robot_obs is not None else None
             )
@@ -338,6 +429,67 @@ class VoxPoserSteering(BaseSteering):
             self._activate_stage(next_idx)
             return True
         return False
+
+    def refresh_costmap(self, robot_obs: np.ndarray, scene_obs: np.ndarray,
+                        fixture_positions: dict = None,
+                        block_aabbs: dict = None):
+        """Re-evaluate current stage's costmap with updated scene state.
+
+        Called at a fixed interval from the step callback. Updates the LMP
+        interface with current object positions, then re-evaluates the
+        cached LLM-generated map code (no new LLM call needed).
+
+        Args:
+            robot_obs: (15,) current robot proprioception
+            scene_obs: (24,) current scene state (block positions, joint states)
+            fixture_positions: Live fixture positions from PyBullet (optional)
+            block_aabbs: Live orientation-aware block AABBs from PyBullet (optional)
+        """
+        if not self._refresh_enabled:
+            return
+        if self._value_map is None or not self._stages:
+            return
+
+        self._steps_since_refresh += 1
+        if self._steps_since_refresh < self._refresh_interval:
+            return
+        self._steps_since_refresh = 0
+
+        # Update LMP interface with current state
+        self._lmp_interface.update_state(
+            robot_obs, scene_obs, fixture_positions, block_aabbs
+        )
+        self._robot_obs = robot_obs
+
+        # Re-evaluate current stage (re-calls cached LLM code with fresh
+        # detect() results reflecting updated object positions)
+        self._activate_stage(self._current_stage_idx, is_refresh=True)
+
+    # ------------------------------------------------------------------
+    # Live 3D Dash visualization
+    # ------------------------------------------------------------------
+
+    def update_dash(self, ee_pos: np.ndarray):
+        """Push the latest costmap state to the live Dash server.
+
+        Args:
+            ee_pos: (3,) absolute world-frame end-effector position.
+        """
+        if self._dash_server is None or self._value_map is None:
+            return
+        objects = (
+            self._lmp_interface.get_all_detections()
+            if self._lmp_interface else None
+        )
+        self._dash_server.update_state(
+            value_map=self._value_map,
+            ee_pos=ee_pos,
+            target=self._current_stage_target,
+            objects=objects,
+            step=self.current_episode_step,
+            stage_idx=self._current_stage_idx,
+            num_stages=len(self._stages),
+        )
 
     # ------------------------------------------------------------------
     # Core guidance computation

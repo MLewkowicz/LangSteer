@@ -36,6 +36,11 @@ relative: ${policy.relative}
 # the steering module switches to the next stage's cost map.
 stage_proximity_threshold: 0.05
 
+# Dynamic costmap refresh: re-evaluate value maps with current scene state.
+# Uses cached LLM code with updated object positions (no new LLM call).
+refresh_costmap: true
+refresh_interval: 1  # refresh every N environment steps
+
 # Voxel map settings
 map_size: 100
 
@@ -48,10 +53,19 @@ cache_dir: cache/voxposer_llm
 load_cache: true
 
 # Workspace bounds (absolute world coords, meters)
-workspace_bounds_min: [-0.35, -0.40, 0.30]
+workspace_bounds_min: [-0.35, -0.60, 0.30]
 workspace_bounds_max: [0.35, 0.15, 0.85]
 
-# Visualization
+# 3D Visualization (static Plotly HTML, generated per stage activation)
 visualize: true
 visualization_quality: low
 visualization_save_dir: null  # defaults to Hydra output dir
+
+# Live 3D Dash visualization server.
+# When enabled, starts a background Dash app at http://127.0.0.1:<port>
+# that re-renders the current ValueMap at a fixed interval. The browser
+# preserves camera rotation/zoom across updates (via Plotly uirevision),
+# so you can spin the view while data refreshes.
+costmap_dash: false
+costmap_dash_port: 8050
+costmap_dash_refresh_s: 0.5  # seconds between figure refreshes

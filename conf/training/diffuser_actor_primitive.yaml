@@ -1,0 +1,44 @@
+# 3D Diffuser Actor Training — Primitive-ID Conditioning
+# Replaces CLIP text features with an nn.Embedding(num_primitives, 512) lookup.
+# The instruction cross-attention pipeline is reused unchanged; only the
+# upstream producer differs.
+#
+# Required prerequisites (run locally, then upload primitive_lang_ann.npy
+# alongside the .dat files in S3):
+#   1. python scripts/preprocess_primitive_annotations.py \
+#        --dataset_path $CALVIN_DATASET_PATH/task_ABC_D \
+#        --split training --output_path .../primitive_lang_ann.npy
+#   2. python -m training.policies.diffuser_actor.preprocessing.package_calvin \
+#        --root_dir $CALVIN_DATASET_PATH/task_ABC_D \
+#        --save_path .../packaged_primitive \
+#        --split training \
+#        --lang_ann_file primitive_lang_ann.npy
+
+defaults:
+  - diffuser_actor_calvin
+
+policy:
+  use_instruction: true
+  use_primitive_id: true
+  num_primitives: 4
+  lang_enhanced: true
+
+dataset:
+  # Point at the primitive-packaged .dat files (episodes split per primitive stage).
+  train_path: "${oc.env:CALVIN_3DA_PRIMITIVE_DATASET_PATH,/home/mlewkowicz/LangSteer/cache/diffuser_actor_data_primitive}/training"
+  val_path: "${oc.env:CALVIN_3DA_PRIMITIVE_DATASET_PATH,/home/mlewkowicz/LangSteer/cache/diffuser_actor_data_primitive}/validation"
+  # instructions_path is not consumed in primitive mode — trainer skips the pickle load.
+  instructions_path: null
+  # Raw primitive_lang_ann.npy (just the lookup table — <1 MB).
+  primitive_ann_path_train: "${oc.env:CALVIN_PRIMITIVE_ANN_PATH,/home/mlewkowicz/calvin/dataset/task_D_D}/training/lang_annotations/primitive_lang_ann.npy"
+  primitive_ann_path_val: "${oc.env:CALVIN_PRIMITIVE_ANN_PATH,/home/mlewkowicz/calvin/dataset/task_D_D}/validation/lang_annotations/primitive_lang_ann.npy"
+  taskvar:
+    - ["A", 0]
+    - ["B", 0]
+    - ["C", 0]
+    - ["D", 0]
+
+train_iters: 200000
+
+checkpoint_dir: "outputs/checkpoints/diffuser_actor_primitive"
+experiment_name: "diffuser_actor_primitive_${now:%Y%m%d_%H%M%S}"

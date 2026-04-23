@@ -39,17 +39,25 @@ class DiffuserActor(nn.Module):
                  diffusion_timesteps=100,
                  nhist=3,
                  relative=False,
-                 lang_enhanced=False):
+                 lang_enhanced=False,
+                 use_primitive_id=False,
+                 num_primitives=4):
         super().__init__()
         if lang_enhanced and not use_instruction:
             raise ValueError(
                 "lang_enhanced=True requires use_instruction=True. "
                 "Set lang_enhanced=False for non-language mode."
             )
+        if use_primitive_id and not use_instruction:
+            raise ValueError(
+                "use_primitive_id=True requires use_instruction=True "
+                "(primitive mode reuses the instruction cross-attention pipeline)."
+            )
         self._rotation_parametrization = rotation_parametrization
         self._quaternion_format = quaternion_format
         self._relative = relative
         self.use_instruction = use_instruction
+        self.use_primitive_id = use_primitive_id
         self.encoder = Encoder(
             backbone=backbone,
             image_size=image_size,
@@ -59,6 +67,8 @@ class DiffuserActor(nn.Module):
             num_vis_ins_attn_layers=num_vis_ins_attn_layers,
             fps_subsampling_factor=fps_subsampling_factor,
             use_instruction=use_instruction,
+            use_primitive_id=use_primitive_id,
+            num_primitives=num_primitives,
         )
         self.prediction_head = DiffusionHead(
             embedding_dim=embedding_dim,

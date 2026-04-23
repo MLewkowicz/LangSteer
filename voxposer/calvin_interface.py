@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Workspace bounds in absolute world coordinates (meters).
 # Covers all CALVIN objects: blocks, slider, drawer, lights, table surface.
-DEFAULT_WORKSPACE_MIN = np.array([-0.35, -0.40, 0.30])
+DEFAULT_WORKSPACE_MIN = np.array([-0.35, -0.60, 0.30])
 DEFAULT_WORKSPACE_MAX = np.array([0.35, 0.15, 0.85])
 
 # Aliases for end-effector
@@ -40,29 +40,24 @@ TABLE_ALIAS = [
 # Link mapping: 0=button, 1=switch, 2=slide, 3=drawer, 4=led, 5=light
 CALVIN_FIXTURES = {
     'slider': {
-        # slide_link (Link 2) — full slider track
+        # slide_link (Link 2) — full slider door
         'position': np.array([0.040, 0.040, 0.555]),
         'size': np.array([0.289, 0.10, 0.04]),
     },
-    'slider_left': {
-        # Left end of slide_link track
-        'position': np.array([-0.105, 0.040, 0.555]),
-        'size': np.array([0.06, 0.06, 0.04]),
-    },
-    'slider_right': {
-        # Right end of slide_link track
-        'position': np.array([0.184, 0.040, 0.555]),
-        'size': np.array([0.06, 0.06, 0.04]),
+    'slider_handle': {
+        # Small vertical grasp groove at the slider door's front face
+        'position': np.array([0.040, -0.010, 0.555]),
+        'size': np.array([0.03, 0.04, 0.11]),
     },
     'drawer': {
         # drawer_link (Link 3)
         'position': np.array([0.180, -0.100, 0.350]),
-        'size': np.array([0.15, 0.12, 0.08]),
+        'size': np.array([0.15, 0.25, 0.08]),
     },
     'drawer_handle': {
-        # Front face of drawer_link
-        'position': np.array([0.180, -0.265, 0.350]),
-        'size': np.array([0.06, 0.04, 0.03]),
+        # Horizontal pull bar flush with the drawer's front face
+        'position': np.array([0.180, -0.245, 0.350]),
+        'size': np.array([0.11, 0.04, 0.03]),
     },
     'lightbulb': {
         # light_link (Link 5)
@@ -166,6 +161,8 @@ class CalvinLMPInterface:
         # Current state (updated each episode/step)
         self._robot_obs: Optional[np.ndarray] = None  # (15,)
         self._scene_obs: Optional[np.ndarray] = None  # (24,)
+        self._fixture_positions: Optional[dict] = None  # live PyBullet positions
+        self._block_aabbs: Optional[dict] = None  # live PyBullet block AABBs
 
         logger.info(
             f"CalvinLMPInterface: map_size={self._map_size}, "
@@ -181,10 +178,29 @@ class CalvinLMPInterface:
     def workspace_bounds_max(self):
         return self._workspace_max
 
-    def update_state(self, robot_obs: np.ndarray, scene_obs: np.ndarray):
-        """Update current robot and scene state for object detection."""
+    def update_state(self, robot_obs: np.ndarray, scene_obs: np.ndarray,
+                     fixture_positions: Optional[dict] = None,
+                     block_aabbs: Optional[dict] = None):
+        """Update current robot and scene state for object detection.
+
+        Args:
+            robot_obs: (15,) robot proprioception
+            scene_obs: (24,) scene state (block positions, joint states)
+            fixture_positions: Optional dict from CalvinEnvironment._get_fixture_positions()
+                mapping fixture name → {'position': (3,), 'size': (3,)}.
+                When provided, _detect_fixture uses live positions instead of
+                hardcoded CALVIN_FIXTURES.
+            block_aabbs: Optional dict from CalvinEnvironment._get_block_aabbs()
+                mapping 'red_block'/'blue_block'/'pink_block' → {'aabb_min',
+                'aabb_max', 'position'}. Gives orientation-aware bounding boxes
+                that reflect the block's current pose.
+        """
         self._robot_obs = np.asarray(robot_obs, dtype=np.float32)
         self._scene_obs = np.asarray(scene_obs, dtype=np.float32)
+        if fixture_positions is not None:
+            self._fixture_positions = fixture_positions
+        if block_aabbs is not None:
+            self._block_aabbs = block_aabbs
 
     # ==========================================================
     # Functions exposed to LLM-generated code
@@ -301,18 +317,20 @@ class CalvinLMPInterface:
             if block_name in name_lower:
                 return self._detect_block(obj_name, obs_slice)
 
-        # Check fixtures (hardcoded positions), longest names first so
+        # Check fixtures, longest names first so
         # 'slider_left' matches before 'slider', 'drawer_handle' before 'drawer'
         for fixture_name in sorted(CALVIN_FIXTURES, key=len, reverse=True):
             if fixture_name in name_lower:
-                return self._detect_fixture(obj_name, CALVIN_FIXTURES[fixture_name])
+                return self._detect_fixture(
+                    obj_name, fixture_name, CALVIN_FIXTURES[fixture_name]
+                )
 
         # Fallback: try to match partial names
         logger.warning(f"Unknown object '{obj_name}', attempting fuzzy match")
         for fixture_name, fixture_info in CALVIN_FIXTURES.items():
             if any(word in name_lower for word in fixture_name.split('_')):
                 logger.info(f"Fuzzy matched '{obj_name}' to fixture '{fixture_name}'")
-                return self._detect_fixture(obj_name, fixture_info)
+                return self._detect_fixture(obj_name, fixture_name, fixture_info)
 
         # Last resort: return workspace center
         logger.warning(f"Could not detect '{obj_name}', returning workspace center")
@@ -328,9 +346,31 @@ class CalvinLMPInterface:
         })
 
     def _detect_block(self, obj_name: str, obs_slice: slice) -> Observation:
-        """Detect a block from scene_obs ground-truth position."""
-        if self._scene_obs is None:
-            logger.warning(f"No scene_obs set, cannot detect '{obj_name}'")
+        """Detect a block, preferring live PyBullet AABB over scene_obs fallback.
+
+        Live AABB from _block_aabbs is orientation-aware (reflects how the block
+        is currently rotated). scene_obs fallback uses only the position and a
+        hardcoded BLOCK_SIZE cube, so it's less accurate — especially for the
+        pink block, which is actually 7×5×5cm.
+        """
+        canonical = obj_name.lower().replace(' ', '_')
+        key = next(
+            (k for k in ('red_block', 'blue_block', 'pink_block') if k in canonical),
+            None,
+        )
+
+        if self._block_aabbs and key in self._block_aabbs:
+            live = self._block_aabbs[key]
+            aabb_min_world = np.asarray(live['aabb_min'], dtype=np.float32)
+            aabb_max_world = np.asarray(live['aabb_max'], dtype=np.float32)
+            pos_world = np.asarray(live['position'], dtype=np.float32)
+        elif self._scene_obs is not None:
+            pos_world = self._scene_obs[obs_slice].copy()
+            half_size = BLOCK_SIZE / 2
+            aabb_min_world = pos_world - half_size
+            aabb_max_world = pos_world + half_size
+        else:
+            logger.warning(f"No scene_obs or block_aabbs set, cannot detect '{obj_name}'")
             center = (self._workspace_min + self._workspace_max) / 2
             return Observation({
                 'name': obj_name,
@@ -338,11 +378,6 @@ class CalvinLMPInterface:
                 'aabb': np.array([self._world_to_voxel(center), self._world_to_voxel(center)]),
                 '_position_world': center,
             })
-
-        pos_world = self._scene_obs[obs_slice].copy()
-        half_size = BLOCK_SIZE / 2
-        aabb_min_world = pos_world - half_size
-        aabb_max_world = pos_world + half_size
 
         return Observation({
             'name': obj_name,
@@ -354,10 +389,24 @@ class CalvinLMPInterface:
             '_position_world': pos_world,
         })
 
-    def _detect_fixture(self, obj_name: str, fixture_info: dict) -> Observation:
-        """Detect a fixed fixture from hardcoded position."""
-        pos_world = fixture_info['position'].copy()
-        half_size = fixture_info['size'] / 2
+    def _detect_fixture(self, obj_name: str, fixture_name: str,
+                        fixture_info: dict) -> Observation:
+        """Detect a fixture, preferring live PyBullet positions over hardcoded.
+
+        Args:
+            obj_name: Original query name (for the Observation)
+            fixture_name: Canonical name matching CALVIN_FIXTURES / _fixture_positions keys
+            fixture_info: Hardcoded fallback from CALVIN_FIXTURES
+        """
+        # Use live position from PyBullet if available
+        if self._fixture_positions and fixture_name in self._fixture_positions:
+            live = self._fixture_positions[fixture_name]
+            pos_world = np.asarray(live['position'], dtype=np.float32).copy()
+            half_size = np.asarray(live['size'], dtype=np.float32) / 2
+        else:
+            pos_world = fixture_info['position'].copy()
+            half_size = fixture_info['size'] / 2
+
         aabb_min_world = pos_world - half_size
         aabb_max_world = pos_world + half_size
 

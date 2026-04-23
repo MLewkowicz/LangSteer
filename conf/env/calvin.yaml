@@ -17,8 +17,14 @@ provide_pcd_images: false  # Provide per-pixel PCD images (required for 3D Diffu
 # Language annotations
 lang_ann_path: "/home/mlewkowicz/calvin/dataset/task_D_D/validation/lang_annotations/auto_lang_ann.npy"
 
+# Perturbation override: when both are set, task instructions come from the perturbed
+# JSON at the given axis (P1..P4) instead of auto_lang_ann.npy. Used by the
+# language-perturbation evaluation benchmark; leave as null for default runs.
+perturbed_ann_path: null
+perturbation_axis: null
+
 # Episode settings
-max_steps: 1000     # Maximum steps per episode
+max_steps: 360     # Maximum steps per episode
 render_mode: null   # Render mode: null, "rgb_array", or "human"
 done_on_success: true  # End episode when task oracle detects success (set false for multi-stage instructions)
 

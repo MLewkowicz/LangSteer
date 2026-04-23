@@ -57,6 +57,12 @@ class VideoConfig:
     save_path: str = "outputs/videos"
     fps: int = 30
     codec: str = "mp4v"
+    # Optional high-res rendering for recording (does not affect policy inputs).
+    # Set to 0 to use native camera resolution (200x200 static, 84x84 gripper).
+    static_record_width: int = 0
+    static_record_height: int = 0
+    gripper_record_width: int = 0
+    gripper_record_height: int = 0
 
 
 @dataclass
@@ -85,6 +91,7 @@ class VisualizationConfig:
     trajectory: TrajectoryVisualizationConfig = field(default_factory=TrajectoryVisualizationConfig)
     reference: ReferenceVisualizationConfig = field(default_factory=ReferenceVisualizationConfig)
     rollout: RolloutVisualizationConfig = field(default_factory=RolloutVisualizationConfig)
+    # video.enabled acts as the toggle for video recording
     video: VideoConfig = field(default_factory=VideoConfig)
 
     @classmethod
@@ -112,9 +119,9 @@ class VisualizationConfig:
             trajectory=trajectory_config,
             reference=reference_config,
             rollout=rollout_config,
-            video=video_config
+            video=video_config,
         )
 
     def is_any_enabled(self) -> bool:
         """Check if any visualization mode is enabled."""
-        return self.render or self.cameras or self.trajectory_3d or self.reference_plot
+        return self.render or self.cameras or self.trajectory_3d or self.reference_plot or self.video.enabled

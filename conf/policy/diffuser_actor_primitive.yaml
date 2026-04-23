@@ -1,0 +1,44 @@
+# 3D Diffuser Actor Policy — Primitive-ID Conditioning
+# Replaces CLIP text embeddings with a tiny nn.Embedding(num_primitives, 512)
+# lookup. The encoder's instruction_encoder / vl_attention / cross-attention
+# layers are shared with the CLIP path; only the upstream producer differs.
+
+name: diffuser_actor
+
+# Checkpoint (trained with primitive_ids instead of CLIP instructions)
+ckpt_path: "checkpoints/primitive_ABCD.pth"
+device: "cuda"
+
+# Architecture (must match training exactly)
+backbone: clip
+image_size: [256, 256]
+embedding_dim: 192
+num_vis_ins_attn_layers: 2
+use_instruction: true       # must stay true — reuses the instruction pipeline
+use_primitive_id: true      # NEW: flips the input side to int primitive ids
+num_primitives: 4           # grasp=0, push=1, pull=2, place=3
+fps_subsampling_factor: 3
+gripper_loc_bounds: [[-0.3021, -0.2569, -0.2156], [0.3613, 0.3377, 0.1837]]
+rotation_parametrization: "6D"
+quaternion_format: "wxyz"
+diffusion_timesteps: 25
+nhist: 3
+relative: true
+lang_enhanced: true
+
+# Inference
+pred_horizon: 20
+
+# Camera setup (CALVIN)
+cameras: ["static", "gripper"]
+
+# Image preprocessing
+crop_images: true
+
+# text_max_length is unused in primitive mode (CLIP tokenizer never loaded)
+# mask_language still works — zeros out the primitive embedding at runtime
+mask_language: false
+
+# MCMC Langevin corrector (used with steering)
+corrector_steps: 0
+corrector_step_size: 0.001

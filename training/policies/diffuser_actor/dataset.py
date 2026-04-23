@@ -328,6 +328,9 @@ class RLBenchDataset(Dataset):
             "pcds": pcds,
             "action": action,
             "instr": instr,
+            # Dummy sentinel; RLBenchDataset path doesn't support primitive-id
+            # training, but the collate fn expects this key.
+            "primitive_id": torch.full((len(rgbs), 1), -1, dtype=torch.long),
             "curr_gripper": gripper,
             "curr_gripper_history": gripper_history,
         }
@@ -355,6 +358,7 @@ class CalvinDataset(RLBenchDataset):
         self,
         root,
         instructions=None,
+        primitive_ids=None,
         taskvar=[('close_door', 0)],
         max_episode_length=5,
         cache_size=0,
@@ -389,6 +393,7 @@ class CalvinDataset(RLBenchDataset):
             )
 
         self._instructions = instructions
+        self._primitive_ids = primitive_ids  # optional np.ndarray[int] aligned with annotation_id
         self._num_vars = Counter()
         for root, (task, var) in itertools.product(self._root, taskvar):
             data_dir = root / f"{task}+{var}"
@@ -460,12 +465,21 @@ class CalvinDataset(RLBenchDataset):
         action = torch.cat([episode[2][i] for i in frame_ids])
 
         # Instruction embeddings (CALVIN uses flat array, not task-indexed)
+        instr_ind = episode[6][0]
         if self._instructions is not None:
-            instr_ind = episode[6][0]
             instr = torch.as_tensor(self._instructions[instr_ind])
             instr = instr.repeat(len(rgbs), 1, 1)
         else:
             instr = torch.zeros((rgbs.shape[0], 53, 512))
+
+        # Primitive-id conditioning (one int per frame; -1 if unused).
+        # We always emit this key so the collate function is shape-uniform;
+        # the trainer decides whether to actually pass it to the model.
+        if self._primitive_ids is not None:
+            pid = int(self._primitive_ids[instr_ind])
+            primitive_id = torch.full((len(rgbs), 1), pid, dtype=torch.long)
+        else:
+            primitive_id = torch.full((len(rgbs), 1), -1, dtype=torch.long)
 
         gripper = torch.cat([episode[4][i] for i in frame_ids])
 
@@ -552,6 +566,7 @@ class CalvinDataset(RLBenchDataset):
             "pcds": pcds,
             "action": action,
             "instr": instr,
+            "primitive_id": primitive_id,
             "curr_gripper": gripper,
             "curr_gripper_history": gripper_history,
         }
@@ -568,18 +583,29 @@ class CalvinDataset(RLBenchDataset):
 # ---------------------------------------------------------------------------
 
 def traj_collate_fn(batch):
-    """Custom collation for variable-length trajectories."""
+    """Custom collation for variable-length trajectories.
+
+    `trajectory_mask` stays bool; `primitive_id` stays long; everything else
+    is float. `primitive_id` is optional — concatenated only if present on all
+    items in the batch.
+    """
     keys = [
         "trajectory", "trajectory_mask",
         "rgbs", "pcds",
         "curr_gripper", "curr_gripper_history", "action", "instr"
     ]
+    def _cast(t, key):
+        if key == "trajectory_mask":
+            return t
+        return t.float()
     ret_dict = {
-        key: torch.cat([
-            item[key].float() if key != 'trajectory_mask' else item[key]
-            for item in batch
-        ]) for key in keys
+        key: torch.cat([_cast(item[key], key) for item in batch])
+        for key in keys
     }
+    if all("primitive_id" in item for item in batch):
+        ret_dict["primitive_id"] = torch.cat(
+            [item["primitive_id"].long() for item in batch]
+        )
     ret_dict["task"] = []
     for item in batch:
         ret_dict["task"] += item['task']

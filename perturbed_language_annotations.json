@@ -1,0 +1,206 @@
+{
+    "close_drawer": {
+        "P1": "push the drawer",
+        "P2": "grasp the drawer handle, then close it",
+        "P3": "Gently push the handle of the wooden cabinet drawer until it is completely shut.",
+        "P4": "Close the compartment."
+    },
+    "open_drawer": {
+        "P1": "pull the drawer",
+        "P2": "grasp the drawer handle and open it",
+        "P3": "Carefully pull the metal handle to slide the drawer open completely.",
+        "P4": "Open it."
+    },
+    "move_slider_left": {
+        "P1": "slide the door to the left",
+        "P2": "grasp the door handle, then move the door to the left",
+        "P3": "Firmly grasp the handle and quickly slide the cabinet door all the way to the left side.",
+        "P4": "Move the sliding door."
+    },
+    "move_slider_right": {
+        "P1": "slide the door to the right",
+        "P2": "grasp the door handle and move the door to the right",
+        "P3": "Firmly grasp the handle and quickly slide the cabinet door all the way to the right side.",
+        "P4": "Push the door."
+    },
+    "turn_on_led": {
+        "P1": "turn on the green lamp",
+        "P2": "push down the button to turn on the green light",
+        "P3": "Reach out and firmly press the small button to turn on the bright green LED.",
+        "P4": "Turn on the light."
+    },
+    "turn_off_led": {
+        "P1": "turn off the green lamp",
+        "P2": "toggle the button to turn off the green light",
+        "P3": "Reach out and firmly press the small button to shut off the bright green LED.",
+        "P4": "Turn off the light."
+    },
+    "turn_on_lightbulb": {
+        "P1": "slide up the switch",
+        "P2": "move the light switch to turn on the yellow light",
+        "P3": "Carefully flip the physical switch upwards to illuminate the yellow lightbulb.",
+        "P4": "Turn on the light."
+    },
+    "turn_off_lightbulb": {
+        "P1": "slide down the switch",
+        "P2": "toggle the light switch to turn off the yellow light",
+        "P3": "Carefully flip the physical switch downwards to darken the yellow lightbulb.",
+        "P4": "Turn off the light."
+    },
+    "lift_blue_block_drawer": {
+        "P1": "pick up the blue block from the drawer",
+        "P2": "go towards the blue block in the drawer and grasp it",
+        "P3": "Gently reach into the wooden drawer and carefully lift up the small blue block.",
+        "P4": "Pick up the block from the drawer."
+    },
+    "lift_pink_block_drawer": {
+        "P1": "pick up the pink block from the drawer",
+        "P2": "go towards the pink block in the drawer and grasp it",
+        "P3": "Gently reach into the wooden drawer and carefully lift up the small pink block.",
+        "P4": "Pick up the block from the drawer."
+    },
+    "lift_red_block_drawer": {
+        "P1": "pick up the red block from the drawer",
+        "P2": "go towards the red block in the drawer and grasp it",
+        "P3": "Gently reach into the wooden drawer and carefully lift up the small red block.",
+        "P4": "Pick up the block from the drawer."
+    },
+    "lift_blue_block_slider": {
+        "P1": "pick up the blue block from the sliding cabinet",
+        "P2": "in the sliding cabinet grasp the blue block",
+        "P3": "Carefully reach into the sliding cabinet compartment and grab the small blue block.",
+        "P4": "Lift the block in the cabinet."
+    },
+    "lift_pink_block_slider": {
+        "P1": "pick up the pink block from the sliding cabinet",
+        "P2": "in the sliding cabinet grasp the pink block",
+        "P3": "Carefully reach into the sliding cabinet compartment and grab the small pink block.",
+        "P4": "Lift the block in the cabinet."
+    },
+    "lift_red_block_slider": {
+        "P1": "pick up the red block from the sliding cabinet",
+        "P2": "in the sliding cabinet grasp the red block",
+        "P3": "Carefully reach into the sliding cabinet compartment and grab the small red block.",
+        "P4": "Lift the block in the cabinet."
+    },
+    "lift_blue_block_table": {
+        "P1": "pick up the blue block",
+        "P2": "grasp the blue block on the table and lift it up",
+        "P3": "Smoothly grasp the small blue block resting on the flat table and lift it straight up.",
+        "P4": "Lift a block from the table."
+    },
+    "lift_pink_block_table": {
+        "P1": "pick up the pink block",
+        "P2": "grasp the pink block on the table and lift it up",
+        "P3": "Smoothly grasp the small pink block resting on the flat table and lift it straight up.",
+        "P4": "Lift a block from the table."
+    },
+    "lift_red_block_table": {
+        "P1": "pick up the red block",
+        "P2": "grasp the red block on the table and lift it up",
+        "P3": "Smoothly grasp the small red block resting on the flat table and lift it straight up.",
+        "P4": "Lift a block from the table."
+    },
+    "push_blue_block_left": {
+        "P1": "slide the blue block to the left",
+        "P2": "go push the blue block to the left",
+        "P3": "Carefully nudge the small blue block over toward the left side of the workspace.",
+        "P4": "Push the block left."
+    },
+    "push_pink_block_left": {
+        "P1": "slide the pink block to the left",
+        "P2": "go push the pink block to the left",
+        "P3": "Carefully nudge the small pink block over toward the left side of the workspace.",
+        "P4": "Push the block left."
+    },
+    "push_red_block_left": {
+        "P1": "slide the red block to the left",
+        "P2": "go push the red block to the left",
+        "P3": "Carefully nudge the small red block over toward the left side of the workspace.",
+        "P4": "Push the block left."
+    },
+    "push_blue_block_right": {
+        "P1": "slide the blue block to the right",
+        "P2": "go slide the blue block to the right",
+        "P3": "Gently sweep the small blue block over toward the right side of the desk.",
+        "P4": "Slide the block right."
+    },
+    "push_pink_block_right": {
+        "P1": "slide the pink block to the right",
+        "P2": "go slide the pink block to the right",
+        "P3": "Gently sweep the small pink block over toward the right side of the desk.",
+        "P4": "Slide the block right."
+    },
+    "push_red_block_right": {
+        "P1": "slide the red block to the right",
+        "P2": "go slide the red block to the right",
+        "P3": "Gently sweep the small red block over toward the right side of the desk.",
+        "P4": "Slide the block right."
+    },
+    "rotate_blue_block_left": {
+        "P1": "turn the blue block left",
+        "P2": "take the blue block and rotate it left",
+        "P3": "Firmly grip the blue block and twist it exactly 90 degrees counter-clockwise.",
+        "P4": "Rotate a block to the left."
+    },
+    "rotate_pink_block_left": {
+        "P1": "turn the pink block left",
+        "P2": "take the pink block and rotate it left",
+        "P3": "Firmly grip the pink block and twist it exactly 90 degrees counter-clockwise.",
+        "P4": "Rotate a block to the left."
+    },
+    "rotate_red_block_left": {
+        "P1": "turn the red block left",
+        "P2": "take the red block and rotate it left",
+        "P3": "Firmly grip the red block and twist it exactly 90 degrees counter-clockwise.",
+        "P4": "Rotate a block to the left."
+    },
+    "rotate_blue_block_right": {
+        "P1": "turn the blue block right",
+        "P2": "grasp the blue block, then rotate it right",
+        "P3": "Firmly grip the blue block and twist it exactly 90 degrees clockwise.",
+        "P4": "Turn the block right."
+    },
+    "rotate_pink_block_right": {
+        "P1": "turn the pink block right",
+        "P2": "grasp the pink block, then rotate it right",
+        "P3": "Firmly grip the pink block and twist it exactly 90 degrees clockwise.",
+        "P4": "Turn the block right."
+    },
+    "rotate_red_block_right": {
+        "P1": "turn the red block right",
+        "P2": "grasp the red block, then rotate it right",
+        "P3": "Firmly grip the red block and twist it exactly 90 degrees clockwise.",
+        "P4": "Turn the block right."
+    },
+    "place_in_drawer": {
+        "P1": "store the object in the drawer",
+        "P2": "move to the drawer and place the object",
+        "P3": "Carefully lower the currently grasped item right into the center of the open drawer.",
+        "P4": "Put it away."
+    },
+    "place_in_slider": {
+        "P1": "put the object in the sliding cabinet",
+        "P2": "place the grasped object in the slider",
+        "P3": "Gently set the item you are holding down inside the sliding cabinet.",
+        "P4": "Place the object inside."
+    },
+    "push_into_drawer": {
+        "P1": "slide the block into the drawer",
+        "P2": "push the object that it falls into the drawer",
+        "P3": "Quickly shove the block so that it tumbles directly into the open drawer.",
+        "P4": "Push it in."
+    },
+    "stack_block": {
+        "P1": "put the block on top of another block",
+        "P2": "place the grasped block on top of another block",
+        "P3": "Very carefully balance the block you are holding directly onto the top of the stationary block.",
+        "P4": "Stack them."
+    },
+    "unstack_block": {
+        "P1": "take off the stacked block",
+        "P2": "go to the tower of blocks and take off the top one",
+        "P3": "Gently dismantle the tower by lifting the uppermost block off of the bottom one.",
+        "P4": "Separate them."
+    }
+}

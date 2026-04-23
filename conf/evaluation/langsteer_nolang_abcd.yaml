@@ -1,0 +1,60 @@
+# LangSteer with nolang Diffuser Actor (ABCD training) + VoxPoser steering
+# No language modules in the architecture; VoxPoser provides all task guidance.
+condition_name: "LangSteer (nolang, ABCD)"
+
+policy_config: diffuser_actor_nolang_abcd
+
+policy:
+  ckpt_path: "checkpoints/nolang_ABCD.pth"
+  mask_language: false
+  corrector_steps: 2
+
+steering: voxposer
+
+# All 34 CALVIN tasks
+tasks:
+  # Rotation (6)
+  - rotate_red_block_right
+  - rotate_red_block_left
+  - rotate_blue_block_right
+  - rotate_blue_block_left
+  - rotate_pink_block_right
+  - rotate_pink_block_left
+  # Push (6)
+  - push_red_block_right
+  - push_red_block_left
+  - push_blue_block_right
+  - push_blue_block_left
+  - push_pink_block_right
+  - push_pink_block_left
+  # Slider (2)
+  - move_slider_left
+  - move_slider_right
+  # Drawer (2)
+  - open_drawer
+  - close_drawer
+  # Lift from table (3)
+  - lift_red_block_table
+  - lift_blue_block_table
+  - lift_pink_block_table
+  # Lift from slider (3)
+  - lift_red_block_slider
+  - lift_blue_block_slider
+  - lift_pink_block_slider
+  # Lift from drawer (3)
+  - lift_red_block_drawer
+  - lift_blue_block_drawer
+  - lift_pink_block_drawer
+  # Place (2)
+  - place_in_slider
+  - place_in_drawer
+  # Push into drawer (1)
+  - push_into_drawer
+  # Stack/unstack (2)
+  - stack_block
+  - unstack_block
+  # Lights (4)
+  - turn_on_lightbulb
+  - turn_off_lightbulb
+  - turn_on_led
+  - turn_off_led

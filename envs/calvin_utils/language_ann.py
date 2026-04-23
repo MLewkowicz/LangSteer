@@ -4,6 +4,7 @@ Loads language annotations from auto_lang_ann.npy file and creates
 task name to instruction mappings.
 """
 
+import json
 import os
 import logging
 from typing import Dict
@@ -98,3 +99,31 @@ def get_instruction_for_task(task_name: str, task_instructions: Dict[str, str]) 
     # Fallback to task name
     logger.warning(f"No annotation found for task '{task_name}', using task name as instruction")
     return task_name
+
+
+def load_perturbed_annotations(path: str, axis: str) -> Dict[str, str]:
+    """Load task -> instruction map from a perturbed annotations JSON for a given axis.
+
+    The JSON is expected to map each task name to a dict with keys P1..P4, e.g.:
+        {"open_drawer": {"P1": "pull the drawer", "P2": ..., "P3": ..., "P4": ...}, ...}
+
+    Raises FileNotFoundError if path is missing and ValueError if any task lacks the
+    requested axis — callers should fail fast rather than silently fall back.
+    """
+    if not path or not os.path.exists(path):
+        raise FileNotFoundError(f"Perturbed annotations file not found: {path}")
+
+    with open(path) as f:
+        data = json.load(f)
+
+    missing = [t for t, axes in data.items() if axis not in axes]
+    if missing:
+        raise ValueError(
+            f"Perturbed annotations at {path} missing axis '{axis}' for tasks: {missing}"
+        )
+
+    task_to_instruction = {task: axes[axis] for task, axes in data.items()}
+    logger.info(
+        f"Loaded perturbed annotations from {path} (axis={axis}, {len(task_to_instruction)} tasks)"
+    )
+    return task_to_instruction

@@ -173,24 +173,17 @@ def main(cfg: DictConfig) -> None:
                 # VoxPoser steering: reset env first, then generate value maps
                 # using the actual scene state
                 obs = env.reset()
-                # Get scene state — method depends on environment
-                if hasattr(env, 'get_scene_state'):
-                    state = env.get_scene_state()
-                    vp_robot_obs = state['robot_obs']
-                    vp_scene_obs = state['scene_obs']
-                else:
-                    # CALVIN fallback: access internal gym env
-                    calvin_obs = env._gym_env._env.get_obs()
-                    vp_robot_obs = calvin_obs.get('robot_obs', np.zeros(15))
-                    vp_scene_obs = calvin_obs.get('scene_obs', np.zeros(24))
+                state = env.get_scene_state()
                 # steering.instruction overrides the instruction used for value maps
                 # (independent from the policy instruction in env.task_description)
                 vp_instruction = cfg.steering.get('instruction', None) or env.task_description
                 steering.setup_episode(
                     env._task_name,
                     instruction=vp_instruction,
-                    robot_obs=vp_robot_obs,
-                    scene_obs=vp_scene_obs,
+                    robot_obs=state['robot_obs'],
+                    scene_obs=state['scene_obs'],
+                    fixture_positions=state.get('fixture_positions'),
+                    block_aabbs=state.get('block_aabbs'),
                 )
                 if steering._value_map is not None:
                     logger.info(f"Generated VoxPoser value maps for: '{vp_instruction}'")
@@ -234,18 +227,73 @@ def main(cfg: DictConfig) -> None:
             if steering is not None and hasattr(steering, 'increment_step'):
                 steering.increment_step()
 
+            # Refresh costmap with current scene state (before stage transition
+            # check so the transition uses updated target positions)
+            if steering is not None and hasattr(steering, 'refresh_costmap'):
+                state = env.get_scene_state()
+                steering.refresh_costmap(
+                    state['robot_obs'], state['scene_obs'],
+                    fixture_positions=state.get('fixture_positions'),
+                    block_aabbs=state.get('block_aabbs'),
+                )
+
             # Check stage transitions for multi-stage steering (proximity-based)
             if steering is not None and hasattr(steering, 'check_stage_transition'):
                 steering.check_stage_transition(obs.ee_pose[:3])
+
+            # Push latest costmap state to live Dash server (if enabled)
+            if steering is not None and hasattr(steering, 'update_dash'):
+                steering.update_dash(obs.ee_pose[:3])
 
             # Log step info
             logger.info(f"Step {timestep:3d} | Action: {action.trajectory[0][:3]} (pos) {action.trajectory[0][6]:.2f} (grip)")
             if reward > 0:
                 logger.info(f"        | Reward: {reward:.2f} ✓")
 
-        # Reset visualization for new episode
+        # Reset visualization for new episode and start video recording
         if viz_manager:
             viz_manager.reset()
+            viz_manager.start_recording(episode)
+
+        # Register per-waypoint recording callback so every sub-step is captured,
+        # not just once per policy prediction.
+        if viz_manager and viz_manager.config.video.enabled and hasattr(env, 'set_waypoint_render_fn'):
+            static_w = viz_manager.config.video.static_record_width
+            static_h = viz_manager.config.video.static_record_height
+            gripper_w = viz_manager.config.video.gripper_record_width
+            gripper_h = viz_manager.config.video.gripper_record_height
+            use_hires_static = static_w > 0 and static_h > 0
+            use_hires_gripper = gripper_w > 0 and gripper_h > 0
+
+            def _waypoint_render(calvin_obs):
+                frames = {}
+                if use_hires_static:
+                    frames['static'] = env.render_high_res_static(static_w, static_h)
+                else:
+                    raw = calvin_obs.get('rgb_obs', {}).get('rgb_static')
+                    if raw is not None:
+                        frames['static'] = raw
+                if use_hires_gripper:
+                    frames['gripper'] = env.render_high_res_gripper(gripper_w, gripper_h)
+                else:
+                    raw = calvin_obs.get('rgb_obs', {}).get('rgb_gripper')
+                    if raw is not None:
+                        frames['gripper'] = raw
+                viz_manager.record_step(frames)
+
+            env.set_waypoint_render_fn(_waypoint_render)
+            # Capture the initial env state before any actions
+            initial_frames = {}
+            if use_hires_static:
+                initial_frames['static'] = env.render_high_res_static(static_w, static_h)
+            elif obs.rgb.get('static') is not None:
+                initial_frames['static'] = obs.rgb.get('static')
+            if use_hires_gripper:
+                initial_frames['gripper'] = env.render_high_res_gripper(gripper_w, gripper_h)
+            elif obs.rgb.get('gripper') is not None:
+                initial_frames['gripper'] = obs.rgb.get('gripper')
+            if initial_frames:
+                viz_manager.record_step(initial_frames)
 
         # Run episode using shared runner
         result = runner.run_episode(
@@ -255,6 +303,12 @@ def main(cfg: DictConfig) -> None:
             step_callback=step_callback,
             render=enable_gui
         )
+
+        # Stop video recording for this episode and clear the waypoint hook
+        if viz_manager:
+            viz_manager.stop_recording()
+        if hasattr(env, 'set_waypoint_render_fn'):
+            env.set_waypoint_render_fn(None)
 
         # Save trajectory if needed
         if log_trajectory:

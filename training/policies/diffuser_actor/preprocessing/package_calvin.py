@@ -204,10 +204,16 @@ def init_datas():
 
 
 def main(split, root_dir, save_path, mode='keypose', traj_len=16,
-         execute_every=4, tasks=None):
-    """Package CALVIN episodes into compressed .dat files."""
+         execute_every=4, tasks=None, lang_ann_file='auto_lang_ann.npy'):
+    """Package CALVIN episodes into compressed .dat files.
+
+    The `lang_ann_file` selects which annotation NPY inside lang_annotations/
+    defines the episode groupings. Default `auto_lang_ann.npy` = per-task
+    (for CLIP / no-language training). Pass `primitive_lang_ann.npy` to package
+    per-primitive episodes (for primitive-id training).
+    """
     annotations = np.load(
-        f'{root_dir}/{split}/lang_annotations/auto_lang_ann.npy',
+        f'{root_dir}/{split}/lang_annotations/{lang_ann_file}',
         allow_pickle=True
     ).item()
     env = make_env(root_dir, split)
@@ -275,6 +281,9 @@ if __name__ == "__main__":
     parser.add_argument("--traj_len", type=int, default=16)
     parser.add_argument("--execute_every", type=int, default=4)
     parser.add_argument("--tasks", nargs="*", default=None)
+    parser.add_argument("--lang_ann_file", type=str, default="auto_lang_ann.npy",
+                        help="Annotation NPY filename (default: auto_lang_ann.npy). "
+                             "Use primitive_lang_ann.npy for primitive-id training data.")
     args = parser.parse_args()
     main(args.split, args.root_dir, args.save_path, args.mode,
-         args.traj_len, args.execute_every, args.tasks)
+         args.traj_len, args.execute_every, args.tasks, args.lang_ann_file)

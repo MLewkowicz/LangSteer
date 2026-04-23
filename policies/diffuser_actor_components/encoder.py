@@ -21,16 +21,25 @@ class Encoder(nn.Module):
                  num_attn_heads=8,
                  num_vis_ins_attn_layers=2,
                  fps_subsampling_factor=5,
-                 use_instruction=True):
+                 use_instruction=True,
+                 use_primitive_id=False,
+                 num_primitives=4):
         super().__init__()
         assert backbone in ["resnet50", "resnet18", "clip"]
         assert image_size in [(128, 128), (256, 256)]
         assert num_sampling_level in [1, 2, 3, 4]
+        if use_primitive_id and not use_instruction:
+            raise ValueError(
+                "use_primitive_id=True requires use_instruction=True: "
+                "primitive mode reuses the instruction cross-attention plumbing."
+            )
 
         self.image_size = image_size
         self.num_sampling_level = num_sampling_level
         self.fps_subsampling_factor = fps_subsampling_factor
         self.use_instruction = use_instruction
+        self.use_primitive_id = use_primitive_id
+        self.num_primitives = num_primitives
 
         # Frozen backbone
         if backbone == "resnet50":
@@ -73,9 +82,18 @@ class Encoder(nn.Module):
         # Goal gripper learnable features
         self.goal_gripper_embed = nn.Embedding(1, embedding_dim)
 
-        # Language modules (only created when use_instruction=True)
+        # Conditioning token producer: exactly one of CLIP-projection OR
+        # primitive-embedding, never both. Both paths produce a (B, L, embedding_dim)
+        # tensor that feeds the shared vl_attention / traj_lang_attention pipeline.
+        #   - CLIP mode:      instruction_encoder: nn.Linear(512, D)  → (B, 53, D)
+        #   - primitive mode: primitive_embedding: nn.Embedding(K, D) → (B,  1, D)
+        # The vl_attention cross-attention layer IS the conditioning mechanism and
+        # is retained in both modes; it's content-agnostic.
         if use_instruction:
-            self.instruction_encoder = nn.Linear(512, embedding_dim)
+            if use_primitive_id:
+                self.primitive_embedding = nn.Embedding(num_primitives, embedding_dim)
+            else:
+                self.instruction_encoder = nn.Linear(512, embedding_dim)
 
             layer = ParallelAttention(
                 num_layers=num_vis_ins_attn_layers,
@@ -214,21 +232,37 @@ class Encoder(nn.Module):
 
     def encode_instruction(self, instruction):
         """
-        Compute language features/pos embeddings on top of CLIP features.
+        Produce the conditioning token sequence at embedding_dim.
 
-        Args:
-            - instruction: (B, max_instruction_length, 512)
+        Dispatch on dtype:
+          - float (CLIP mode): instruction is (B, L, 512) CLIP last_hidden_state;
+            projected to (B, L, D) by `instruction_encoder`.
+          - long  (primitive-id mode): instruction is (B,) or (B, 1) primitive
+            indices; `primitive_embedding` produces (B, 1, D) directly.
 
         Returns:
-            - instr_feats: (B, 53, F)
-            - instr_dummy_pos: (B, 53, F, 2)
+            - instr_feats: (B, L, embedding_dim)  — L=53 for CLIP, L=1 for primitive
+            - instr_dummy_pos: (B, L, F, 2)
         """
         assert self.use_instruction, "encode_instruction called but use_instruction=False"
-        instr_feats = self.instruction_encoder(instruction)
+        if instruction.dtype in (torch.long, torch.int32, torch.int64):
+            assert self.use_primitive_id, (
+                "Received integer instruction but use_primitive_id=False. "
+                "Set use_primitive_id=True or pass float CLIP embeddings."
+            )
+            if instruction.dim() == 1:
+                instruction = instruction.unsqueeze(1)  # (B,) -> (B, 1)
+            instr_feats = self.primitive_embedding(instruction)  # (B, 1, D)
+        else:
+            assert not self.use_primitive_id, (
+                "Received float instruction but use_primitive_id=True. "
+                "Pass a long primitive-id tensor instead."
+            )
+            instr_feats = self.instruction_encoder(instruction)  # (B, 53, D)
         # Dummy positional embeddings, all 0s
         instr_dummy_pos = torch.zeros(
-            len(instruction), instr_feats.shape[1], 3,
-            device=instruction.device
+            instr_feats.shape[0], instr_feats.shape[1], 3,
+            device=instr_feats.device
         )
         instr_dummy_pos = self.relative_pe_layer(instr_dummy_pos)
         return instr_feats, instr_dummy_pos

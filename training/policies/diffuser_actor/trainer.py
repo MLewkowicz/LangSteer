@@ -94,6 +94,12 @@ class DiffuserActorTrainingWorkspace:
         self.global_step = 0
         self.best_loss = None
         self.use_instruction = cfg.policy.get("use_instruction", True)
+        self.use_primitive_id = cfg.policy.get("use_primitive_id", False)
+        if self.use_primitive_id and not self.use_instruction:
+            raise ValueError(
+                "use_primitive_id=True requires use_instruction=True "
+                "(primitive mode reuses the instruction cross-attention pipeline)."
+            )
 
         # Logging
         self.use_wandb = cfg.get("use_wandb", True) and self.is_main_process
@@ -182,6 +188,8 @@ class DiffuserActorTrainingWorkspace:
             nhist=policy_cfg.get("nhist", 3),
             relative=policy_cfg.get("relative", True),
             lang_enhanced=policy_cfg.get("lang_enhanced", True),
+            use_primitive_id=policy_cfg.get("use_primitive_id", False),
+            num_primitives=policy_cfg.get("num_primitives", 4),
         )
 
         if self.is_main_process:
@@ -233,7 +241,10 @@ class DiffuserActorTrainingWorkspace:
         """Initialize train and validation datasets."""
         dataset_cfg = cfg.dataset
 
-        if self.use_instruction:
+        # CLIP-mode instruction embeddings (.pkl with precomputed features).
+        # Skipped entirely in primitive-id mode (model doesn't need them) and
+        # in no-language mode.
+        if self.use_instruction and not self.use_primitive_id:
             train_instructions = self._load_instructions(
                 dataset_cfg.instructions_path, "training"
             )
@@ -243,6 +254,19 @@ class DiffuserActorTrainingWorkspace:
         else:
             train_instructions = None
             val_instructions = None
+
+        # Primitive-ID mode: build a flat {annotation_id -> int} array from the
+        # primitive_lang_ann.npy annotations' `task` field (which holds primitive
+        # names like "grasp"/"push"/"pull"/"place" after preprocessing).
+        train_primitive_ids = None
+        val_primitive_ids = None
+        if self.use_primitive_id:
+            train_primitive_ids = self._load_primitive_ids(
+                dataset_cfg.get("primitive_ann_path_train"), self.cfg.policy
+            )
+            val_primitive_ids = self._load_primitive_ids(
+                dataset_cfg.get("primitive_ann_path_val"), self.cfg.policy
+            )
 
         # Load from config if specified, otherwise default to all 4 CALVIN scenes
         taskvar_cfg = dataset_cfg.get("taskvar", None)
@@ -258,6 +282,7 @@ class DiffuserActorTrainingWorkspace:
         train_dataset = CalvinDataset(
             root=dataset_cfg.train_path,
             instructions=train_instructions,
+            primitive_ids=train_primitive_ids,
             taskvar=taskvar,
             max_episode_length=dataset_cfg.get("max_episode_length", 5),
             cache_size=dataset_cfg.get("cache_size", 100),
@@ -274,6 +299,7 @@ class DiffuserActorTrainingWorkspace:
         val_dataset = CalvinDataset(
             root=dataset_cfg.val_path,
             instructions=val_instructions,
+            primitive_ids=val_primitive_ids,
             taskvar=taskvar,
             max_episode_length=dataset_cfg.get("max_episode_length", 5),
             cache_size=dataset_cfg.get("cache_size_val", 100),
@@ -287,6 +313,47 @@ class DiffuserActorTrainingWorkspace:
             relative_action=dataset_cfg.get("relative_action", True),
         )
         return train_dataset, val_dataset
+
+    def _build_instruction(self, sample):
+        """Return the conditioning tensor matching the active mode.
+
+        - primitive-id mode: long tensor of shape (B, 1) with ids in [0, K)
+        - CLIP mode:         float tensor of shape (B, 53, 512) CLIP features
+        - no-language mode:  None
+        """
+        if self.use_primitive_id:
+            return sample["primitive_id"].to(self.device).long()
+        if self.use_instruction:
+            return sample["instr"].to(self.device)
+        return None
+
+    @staticmethod
+    def _load_primitive_ids(ann_path, policy_cfg):
+        """Load a primitive_lang_ann.npy and map its `task` primitives -> int ids.
+
+        Returns a 1D numpy int array of length N (number of annotations),
+        indexed by `annotation_id` (what `episode[6][0]` carries).
+        """
+        if ann_path is None:
+            raise ValueError(
+                "use_primitive_id=True but dataset.primitive_ann_path_{train,val} "
+                "is not set. Point to the primitive_lang_ann.npy produced by "
+                "scripts/preprocess_primitive_annotations.py."
+            )
+        ann = np.load(ann_path, allow_pickle=True).item()
+        tasks = list(ann["language"]["task"])
+        # Fixed vocabulary for LangSteer's 4-primitive scheme.
+        vocab = {"grasp": 0, "push": 1, "pull": 2, "place": 3}
+        num_primitives = policy_cfg.get("num_primitives", 4)
+        if len(vocab) != num_primitives:
+            raise ValueError(
+                f"num_primitives={num_primitives} but vocabulary has {len(vocab)}. "
+                "Adjust both if extending the primitive set."
+            )
+        ids = np.array([vocab[str(t)] for t in tasks], dtype=np.int64)
+        logger.info(f"Loaded {len(ids)} primitive ids from {ann_path}: "
+                    f"{dict((k, int((ids == v).sum())) for k, v in vocab.items())}")
+        return ids
 
     @staticmethod
     def _load_instructions(instructions_path, split):
@@ -420,8 +487,10 @@ class DiffuserActorTrainingWorkspace:
             # Select gripper history
             curr_gripper = sample["curr_gripper_history"][:, -nhist:]
 
-            # Forward pass (loss computed inside model)
-            instr = sample["instr"].to(self.device) if self.use_instruction else None
+            # Forward pass (loss computed inside model).
+            # `instruction` is polymorphic: long tensor of primitive ids in
+            # primitive mode, float CLIP features in CLIP mode, None otherwise.
+            instr = self._build_instruction(sample)
             loss = self.model(
                 sample["trajectory"].to(self.device),
                 sample["trajectory_mask"].to(self.device),
@@ -507,7 +576,7 @@ class DiffuserActorTrainingWorkspace:
             curr_gripper = sample["curr_gripper_history"][:, -nhist:]
 
             # Run inference
-            instr = sample["instr"].to(device) if self.use_instruction else None
+            instr = self._build_instruction(sample)
             pred = self.model(
                 sample["trajectory"].to(device),
                 sample["trajectory_mask"].to(device),
@@ -582,6 +651,8 @@ class DiffuserActorTrainingWorkspace:
             "arch_config": {
                 "use_instruction": self.cfg.policy.get("use_instruction", True),
                 "lang_enhanced": self.cfg.policy.get("lang_enhanced", True),
+                "use_primitive_id": self.cfg.policy.get("use_primitive_id", False),
+                "num_primitives": self.cfg.policy.get("num_primitives", 4),
             },
         }
         if self.ema_model is not None:

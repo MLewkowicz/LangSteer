@@ -3,11 +3,55 @@
 Provides a simplified gym-compatible interface to CALVIN simulation.
 """
 
+import json
 import logging
+from pathlib import Path
 from typing import Dict, Tuple, Optional
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+def _find_calvin_data_dir() -> Path:
+    """Find calvin_env's data directory, resolving symlinks.
+
+    calvin_env's setup.py doesn't include the data/ directory as package data,
+    so it's not installed to site-packages. This function checks for a symlink
+    or falls back to the uv git cache via dist-info metadata.
+
+    Returns the resolved real path (not a symlink), since PyBullet's EGL
+    renderer cannot follow symlinks in search paths.
+    """
+    import calvin_env
+    pkg_dir = Path(calvin_env.__file__).parent
+
+    # Check if data/ exists in installed package (possibly via symlink)
+    data_dir = pkg_dir / "data"
+    if data_dir.exists():
+        return data_dir.resolve()
+
+    # Fallback: find data in uv git cache via dist-info metadata
+    for dist_info in pkg_dir.parent.glob("calvin_env*.dist-info"):
+        direct_url_file = dist_info / "direct_url.json"
+        if direct_url_file.exists():
+            info = json.loads(direct_url_file.read_text())
+            if "vcs_info" in info:
+                commit = info["vcs_info"]["commit_id"]
+                uv_cache = Path.home() / ".cache" / "uv" / "git-v0" / "checkouts"
+                if uv_cache.exists():
+                    for repo_dir in uv_cache.iterdir():
+                        # uv uses short commit hashes as directory names
+                        for checkout in repo_dir.iterdir():
+                            if commit.startswith(checkout.name):
+                                candidate = checkout / "data"
+                                if candidate.exists():
+                                    return candidate.resolve()
+
+    raise FileNotFoundError(
+        "calvin_env data directory not found. The package does not install its "
+        "data/ directory. Try: ln -s $(find ~/.cache/uv -path '*/calvin_env*/data' "
+        f"-type d | head -1) {pkg_dir}/data"
+    )
 
 
 class CalvinGymWrapper:
@@ -47,44 +91,58 @@ class CalvinGymWrapper:
             from calvin_env.envs.play_table_env import get_env
             from calvin_env.robot.robot import Robot
             import pybullet as p
-            import pybullet_data
 
-            # Monkey patch Robot.load() to add search path before loading URDF
+            # Resolve calvin_env data directory (may be in uv git cache).
+            # Must use resolved real path — PyBullet's EGL renderer cannot
+            # follow symlinks in search paths.
+            calvin_data_dir = _find_calvin_data_dir()
+            logger.info(f"Resolved calvin_env data directory: {calvin_data_dir}")
+
+            # Monkey patch Robot.load() to set calvin_env data as the search
+            # path before loading URDF. Note: setAdditionalSearchPath is NOT
+            # additive — each call overwrites the previous, so we set only
+            # the calvin data dir (which contains all needed URDFs).
             original_load = Robot.load
             def patched_load(self):
-                # Set PyBullet data path before loading URDF
                 try:
-                    p.setAdditionalSearchPath(pybullet_data.getDataPath(), physicsClientId=self.cid)
-                except:
-                    pass  # Ignore errors, might already be set
+                    p.setAdditionalSearchPath(calvin_data_dir.as_posix(), physicsClientId=self.cid)
+                except Exception:
+                    pass
                 return original_load(self)
             Robot.load = patched_load
 
             if self.dataset_path is not None:
-                from pathlib import Path
                 from omegaconf import OmegaConf
 
                 val_folder = Path(self.dataset_path) / self.split
 
-                # IMPORTANT: Remove tactile camera to avoid NumPy 2.0 incompatibility
-                # This programmatically patches the CALVIN config without manual edits
+                # Patch CALVIN config: fix data path and NumPy 2.0 incompatibility
                 config_path = val_folder / '.hydra' / 'merged_config.yaml'
                 if config_path.exists():
                     config = OmegaConf.load(config_path)
+
+                    # Fix data_path — resolve symlinks for EGL compatibility
+                    if 'data_path' in config:
+                        configured_path = Path(config.data_path)
+                        resolved = configured_path.resolve() if configured_path.exists() else calvin_data_dir
+                        if str(resolved) != config.data_path:
+                            config.data_path = resolved.as_posix()
+                            logger.info(f"Resolved data_path to: {resolved}")
+
                     if 'env' in config and 'cameras' in config.env:
                         # Remove tactile camera if present
                         if 'tactile' in config.env.cameras:
                             del config.env.cameras['tactile']
                             logger.info("Removed tactile camera from config (NumPy 2.0 compatibility)")
-                        # Save patched config temporarily
-                        temp_config = val_folder / '.hydra' / 'merged_config_patched.yaml'
-                        OmegaConf.save(config, temp_config)
-                        # Temporarily rename files to use patched config
-                        import shutil
-                        config_backup = val_folder / '.hydra' / 'merged_config_original.yaml'
-                        if not config_backup.exists():
-                            shutil.copy(config_path, config_backup)
-                        shutil.copy(temp_config, config_path)
+
+                    # Save patched config
+                    temp_config = val_folder / '.hydra' / 'merged_config_patched.yaml'
+                    OmegaConf.save(config, temp_config)
+                    import shutil
+                    config_backup = val_folder / '.hydra' / 'merged_config_original.yaml'
+                    if not config_backup.exists():
+                        shutil.copy(config_path, config_backup)
+                    shutil.copy(temp_config, config_path)
 
                 self._env = get_env(val_folder, show_gui=self.use_gui)
                 logger.info(f"CALVIN environment initialized from: {val_folder}")

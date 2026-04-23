@@ -21,3 +21,8 @@ instruction: null
 
 # Experiment options
 use_reference_init: false  # Use reference trajectory initial conditions even without steering (for fair comparison)
+num_episodes: 10           # Number of episodes to evaluate
+max_steps: 1000            # Maximum steps per episode
+log_trajectory: false      # Save trajectory data to disk
+log_dir: "outputs/trajectories"  # Directory for trajectory .npz files
+enable_gui: false          # Show PyBullet GUI during rollout
