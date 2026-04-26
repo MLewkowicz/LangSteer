@@ -58,7 +58,7 @@ def keypoint_discovery(trajectories, scene_states=None, task=None,
     large_A = A[_local_max_A] >= topK
     _local_max_A = _local_max_A[large_A].tolist()
 
-    local_max_A = [_local_max_A.pop(0)]
+    local_max_A = [_local_max_A.pop(0)] if _local_max_A else []
     for i in _local_max_A:
         if i - local_max_A[-1] >= buffer_size:
             local_max_A.append(i)
