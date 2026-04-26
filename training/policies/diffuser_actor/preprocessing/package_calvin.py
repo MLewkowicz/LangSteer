@@ -31,25 +31,9 @@ from .calvin_utils import (
 
 
 def make_env(dataset_path, split):
-    from calvin_env.envs.play_table_env import get_env
-    from calvin_env.robot.robot import Robot
-    import pybullet as p
-    from envs.calvin_utils.gym_wrapper import _find_calvin_data_dir
-
-    calvin_data_dir = _find_calvin_data_dir()
-    original_load = Robot.load
-
-    def patched_load(self):
-        try:
-            p.setAdditionalSearchPath(calvin_data_dir.as_posix(), physicsClientId=self.cid)
-        except Exception:
-            pass
-        return original_load(self)
-
-    Robot.load = patched_load
-
-    val_folder = Path(dataset_path) / f"{split}"
-    env = get_env(val_folder, show_gui=False)
+    from envs.calvin_utils.gym_wrapper import CalvinGymWrapper
+    wrapper = CalvinGymWrapper(dataset_path=dataset_path, split=split, use_gui=False)
+    env, wrapper._env = wrapper._env, None  # detach so wrapper.__del__ doesn't close it
     return env
 
 
