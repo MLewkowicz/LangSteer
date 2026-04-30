@@ -1,0 +1,89 @@
+# VLS (Vision-Language Steering) evaluation condition
+condition_name: "VLS"
+
+vls:
+  # HuggingFace pretrained path or local checkpoint directory
+  policy_pretrained: "Vision-Language-Steering/vls_calvin_base"
+
+  # Number of diffusion particles (batch size for guidance)
+  sample_batch_size: 20
+
+  # Guidance parameters (from VLS paper / configs/config.yaml)
+  use_guidance: true
+  guide_scale: 80.0
+  sigmoid_k: 12.0
+  sigmoid_x0: 0.7
+  start_ratio: null            # null = use VLS default (70% of denoising steps)
+  use_diversity: true
+  diversity_scale: 10.0
+  MCMC_steps: 4
+
+  # Feynman-Kac diffusion resampling
+  use_fkd: false
+
+  # LLM for guidance function generation
+  api_key: null                # reads OPENAI_API_KEY from env if null
+  model: "gpt-4o"
+  temperature: 1.0
+  max_completion_tokens: 2000
+
+  # Keypoint detector
+  keypoint_detector:
+    num_candidates_per_mask: 5
+    min_dist_bt_keypoints: 0.05
+    max_mask_ratio: 0.5
+    bounds_min: [-1.0, -0.75, -0.1]
+    bounds_max: [1.00, 0.75, 1.2]
+    feature_extractor: dinov3_vitb16
+
+  # Optional: reuse cached guidance functions across episodes for same task
+  # Set to a directory path to skip VLM queries (speeds up re-runs)
+  cached_functions_dir: null
+
+# All 34 CALVIN tasks (identical to baseline.yaml)
+tasks:
+  # Rotation (6)
+  - rotate_red_block_right
+  - rotate_red_block_left
+  - rotate_blue_block_right
+  - rotate_blue_block_left
+  - rotate_pink_block_right
+  - rotate_pink_block_left
+  # Push (6)
+  - push_red_block_right
+  - push_red_block_left
+  - push_blue_block_right
+  - push_blue_block_left
+  - push_pink_block_right
+  - push_pink_block_left
+  # Slider (2)
+  - move_slider_left
+  - move_slider_right
+  # Drawer (2)
+  - open_drawer
+  - close_drawer
+  # Lift from table (3)
+  - lift_red_block_table
+  - lift_blue_block_table
+  - lift_pink_block_table
+  # Lift from slider (3)
+  - lift_red_block_slider
+  - lift_blue_block_slider
+  - lift_pink_block_slider
+  # Lift from drawer (3)
+  - lift_red_block_drawer
+  - lift_blue_block_drawer
+  - lift_pink_block_drawer
+  # Place (2)
+  - place_in_slider
+  - place_in_drawer
+  # Push into drawer (1)
+  - push_into_drawer
+  # Stack/unstack (2)
+  - stack_block
+  - unstack_block
+  # Lights (4)
+  - turn_on_lightbulb
+  - turn_off_lightbulb
+  - turn_on_led
+  - turn_off_led
