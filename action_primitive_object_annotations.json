@@ -1,0 +1,381 @@
+{
+  "primitives": [
+    "grasp",
+    "push",
+    "pull",
+    "place",
+    "rotate"
+  ],
+  "task_annotation_schema": {
+    "close_drawer": {
+      "primitives": [
+        "grasp",
+        "push"
+      ],
+      "objects": [
+        "drawer_handle",
+        "drawer_handle"
+      ],
+      "transition_observable": {
+        "indices": [
+          1
+        ],
+        "direction": "decreasing",
+        "threshold": 0.01
+      }
+    },
+    "open_drawer": {
+      "primitives": [
+        "grasp",
+        "pull"
+      ],
+      "objects": [
+        "drawer_handle",
+        "drawer_handle"
+      ],
+      "transition_observable": {
+        "indices": [
+          1
+        ],
+        "direction": "increasing",
+        "threshold": 0.01
+      }
+    },
+    "lift_blue_block_table": {
+      "primitives": [
+        "grasp"
+      ],
+      "objects": [
+        "blue_block"
+      ]
+    },
+    "lift_blue_block_drawer": {
+      "primitives": [
+        "grasp"
+      ],
+      "objects": [
+        "blue_block"
+      ]
+    },
+    "lift_blue_block_slider": {
+      "primitives": [
+        "grasp"
+      ],
+      "objects": [
+        "blue_block"
+      ]
+    },
+    "lift_pink_block_table": {
+      "primitives": [
+        "grasp"
+      ],
+      "objects": [
+        "pink_block"
+      ]
+    },
+    "lift_pink_block_drawer": {
+      "primitives": [
+        "grasp"
+      ],
+      "objects": [
+        "pink_block"
+      ]
+    },
+    "lift_pink_block_slider": {
+      "primitives": [
+        "grasp"
+      ],
+      "objects": [
+        "pink_block"
+      ]
+    },
+    "lift_red_block_table": {
+      "primitives": [
+        "grasp"
+      ],
+      "objects": [
+        "red_block"
+      ]
+    },
+    "lift_red_block_drawer": {
+      "primitives": [
+        "grasp"
+      ],
+      "objects": [
+        "red_block"
+      ]
+    },
+    "lift_red_block_slider": {
+      "primitives": [
+        "grasp"
+      ],
+      "objects": [
+        "red_block"
+      ]
+    },
+    "rotate_blue_block_left": {
+      "primitives": [
+        "rotate"
+      ],
+      "objects": [
+        "blue_block"
+      ]
+    },
+    "rotate_blue_block_right": {
+      "primitives": [
+        "rotate"
+      ],
+      "objects": [
+        "blue_block"
+      ]
+    },
+    "rotate_pink_block_left": {
+      "primitives": [
+        "rotate"
+      ],
+      "objects": [
+        "pink_block"
+      ]
+    },
+    "rotate_pink_block_right": {
+      "primitives": [
+        "rotate"
+      ],
+      "objects": [
+        "pink_block"
+      ]
+    },
+    "rotate_red_block_left": {
+      "primitives": [
+        "rotate"
+      ],
+      "objects": [
+        "red_block"
+      ]
+    },
+    "rotate_red_block_right": {
+      "primitives": [
+        "rotate"
+      ],
+      "objects": [
+        "red_block"
+      ]
+    },
+    "move_slider_left": {
+      "primitives": [
+        "grasp",
+        "push"
+      ],
+      "objects": [
+        "slider_handle",
+        "slider_handle"
+      ],
+      "transition_observable": {
+        "indices": [
+          0
+        ],
+        "direction": "increasing",
+        "threshold": 0.01
+      }
+    },
+    "move_slider_right": {
+      "primitives": [
+        "grasp",
+        "pull"
+      ],
+      "objects": [
+        "slider_handle",
+        "slider_handle"
+      ],
+      "transition_observable": {
+        "indices": [
+          0
+        ],
+        "direction": "decreasing",
+        "threshold": 0.01
+      }
+    },
+    "place_in_drawer": {
+      "primitives": [
+        "grasp",
+        "place"
+      ],
+      "objects": [
+        "block",
+        "block"
+      ],
+      "transition_observable": {
+        "indices": [
+          8,
+          14,
+          20
+        ],
+        "direction": "any",
+        "threshold": 0.01
+      }
+    },
+    "place_in_slider": {
+      "primitives": [
+        "grasp",
+        "place"
+      ],
+      "objects": [
+        "block",
+        "block"
+      ],
+      "transition_observable": {
+        "indices": [
+          8,
+          14,
+          20
+        ],
+        "direction": "any",
+        "threshold": 0.01
+      }
+    },
+    "push_blue_block_left": {
+      "primitives": [
+        "push"
+      ],
+      "objects": [
+        "blue_block"
+      ]
+    },
+    "push_blue_block_right": {
+      "primitives": [
+        "push"
+      ],
+      "objects": [
+        "blue_block"
+      ]
+    },
+    "push_pink_block_left": {
+      "primitives": [
+        "push"
+      ],
+      "objects": [
+        "pink_block"
+      ]
+    },
+    "push_pink_block_right": {
+      "primitives": [
+        "push"
+      ],
+      "objects": [
+        "pink_block"
+      ]
+    },
+    "push_red_block_left": {
+      "primitives": [
+        "push"
+      ],
+      "objects": [
+        "red_block"
+      ]
+    },
+    "push_red_block_right": {
+      "primitives": [
+        "push"
+      ],
+      "objects": [
+        "red_block"
+      ]
+    },
+    "push_into_drawer": {
+      "primitives": [
+        "push"
+      ],
+      "objects": [
+        "block"
+      ]
+    },
+    "stack_block": {
+      "primitives": [
+        "grasp",
+        "place"
+      ],
+      "objects": [
+        "block",
+        "block"
+      ],
+      "transition_observable": {
+        "indices": [
+          8,
+          14,
+          20
+        ],
+        "direction": "any",
+        "threshold": 0.01
+      }
+    },
+    "unstack_block": {
+      "primitives": [
+        "grasp",
+        "place"
+      ],
+      "objects": [
+        "block",
+        "block"
+      ],
+      "transition_observable": {
+        "indices": [
+          8,
+          14,
+          20
+        ],
+        "direction": "any",
+        "threshold": 0.005
+      }
+    },
+    "turn_on_led": {
+      "primitives": [
+        "push"
+      ],
+      "objects": [
+        "led_button"
+      ]
+    },
+    "turn_off_led": {
+      "primitives": [
+        "push"
+      ],
+      "objects": [
+        "led_button"
+      ]
+    },
+    "turn_on_lightbulb": {
+      "primitives": [
+        "grasp",
+        "push"
+      ],
+      "objects": [
+        "lightbulb_switch",
+        "lightbulb_switch"
+      ],
+      "transition_observable": {
+        "indices": [
+          3
+        ],
+        "direction": "increasing",
+        "threshold": 0.005
+      }
+    },
+    "turn_off_lightbulb": {
+      "primitives": [
+        "grasp",
+        "pull"
+      ],
+      "objects": [
+        "lightbulb_switch",
+        "lightbulb_switch"
+      ],
+      "transition_observable": {
+        "indices": [
+          3
+        ],
+        "direction": "decreasing",
+        "threshold": 0.005
+      }
+    }
+  }
+}
