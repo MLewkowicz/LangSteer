@@ -23,7 +23,9 @@ class Encoder(nn.Module):
                  fps_subsampling_factor=5,
                  use_instruction=True,
                  use_primitive_id=False,
-                 num_primitives=4):
+                 num_primitives=5,
+                 use_object_id=False,
+                 num_objects=8):
         super().__init__()
         assert backbone in ["resnet50", "resnet18", "clip"]
         assert image_size in [(128, 128), (256, 256)]
@@ -33,6 +35,10 @@ class Encoder(nn.Module):
                 "use_primitive_id=True requires use_instruction=True: "
                 "primitive mode reuses the instruction cross-attention plumbing."
             )
+        if use_object_id and not use_primitive_id:
+            raise ValueError(
+                "use_object_id=True requires use_primitive_id=True."
+            )
 
         self.image_size = image_size
         self.num_sampling_level = num_sampling_level
@@ -40,6 +46,8 @@ class Encoder(nn.Module):
         self.use_instruction = use_instruction
         self.use_primitive_id = use_primitive_id
         self.num_primitives = num_primitives
+        self.use_object_id = use_object_id
+        self.num_objects = num_objects
 
         # Frozen backbone
         if backbone == "resnet50":
@@ -82,16 +90,17 @@ class Encoder(nn.Module):
         # Goal gripper learnable features
         self.goal_gripper_embed = nn.Embedding(1, embedding_dim)
 
-        # Conditioning token producer: exactly one of CLIP-projection OR
-        # primitive-embedding, never both. Both paths produce a (B, L, embedding_dim)
-        # tensor that feeds the shared vl_attention / traj_lang_attention pipeline.
-        #   - CLIP mode:      instruction_encoder: nn.Linear(512, D)  → (B, 53, D)
-        #   - primitive mode: primitive_embedding: nn.Embedding(K, D) → (B,  1, D)
-        # The vl_attention cross-attention layer IS the conditioning mechanism and
-        # is retained in both modes; it's content-agnostic.
+        # Conditioning token producer — one of three paths, all producing
+        # (B, L, embedding_dim) fed into the shared vl_attention pipeline:
+        #   - CLIP mode:               instruction_encoder (B, 53, D)
+        #   - primitive-only mode:     primitive_embedding (B, 1, D)
+        #   - primitive+object mode:   primitive_embedding + object_embedding
+        #                              concatenated to (B, 2, D)
         if use_instruction:
             if use_primitive_id:
                 self.primitive_embedding = nn.Embedding(num_primitives, embedding_dim)
+                if use_object_id:
+                    self.object_embedding = nn.Embedding(num_objects, embedding_dim)
             else:
                 self.instruction_encoder = nn.Linear(512, embedding_dim)
 
@@ -237,11 +246,14 @@ class Encoder(nn.Module):
         Dispatch on dtype:
           - float (CLIP mode): instruction is (B, L, 512) CLIP last_hidden_state;
             projected to (B, L, D) by `instruction_encoder`.
-          - long  (primitive-id mode): instruction is (B,) or (B, 1) primitive
-            indices; `primitive_embedding` produces (B, 1, D) directly.
+          - long  (primitive-only mode): instruction is (B,) or (B, 1) primitive
+            indices; `primitive_embedding` produces (B, 1, D).
+          - long  (primitive+object mode): instruction is (B, 2) where
+            [:,0]=primitive_id and [:,1]=object_id; embeddings are looked up
+            separately and concatenated to (B, 2, D).
 
         Returns:
-            - instr_feats: (B, L, embedding_dim)  — L=53 for CLIP, L=1 for primitive
+            - instr_feats: (B, L, embedding_dim)  — L=53 CLIP, 1 primitive, 2 prim+obj
             - instr_dummy_pos: (B, L, F, 2)
         """
         assert self.use_instruction, "encode_instruction called but use_instruction=False"
@@ -250,9 +262,18 @@ class Encoder(nn.Module):
                 "Received integer instruction but use_primitive_id=False. "
                 "Set use_primitive_id=True or pass float CLIP embeddings."
             )
-            if instruction.dim() == 1:
-                instruction = instruction.unsqueeze(1)  # (B,) -> (B, 1)
-            instr_feats = self.primitive_embedding(instruction)  # (B, 1, D)
+            if self.use_object_id:
+                # instruction: (B, 2) — col 0 = primitive_id, col 1 = object_id
+                assert instruction.dim() == 2 and instruction.shape[1] == 2, (
+                    f"use_object_id=True expects (B, 2) long tensor, got {instruction.shape}"
+                )
+                prim_feats = self.primitive_embedding(instruction[:, 0:1])  # (B, 1, D)
+                obj_feats = self.object_embedding(instruction[:, 1:2])      # (B, 1, D)
+                instr_feats = torch.cat([prim_feats, obj_feats], dim=1)     # (B, 2, D)
+            else:
+                if instruction.dim() == 1:
+                    instruction = instruction.unsqueeze(1)  # (B,) -> (B, 1)
+                instr_feats = self.primitive_embedding(instruction)  # (B, 1, D)
         else:
             assert not self.use_primitive_id, (
                 "Received float instruction but use_primitive_id=True. "

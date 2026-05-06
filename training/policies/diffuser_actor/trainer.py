@@ -95,10 +95,15 @@ class DiffuserActorTrainingWorkspace:
         self.best_loss = None
         self.use_instruction = cfg.policy.get("use_instruction", True)
         self.use_primitive_id = cfg.policy.get("use_primitive_id", False)
+        self.use_object_id = cfg.policy.get("use_object_id", False)
         if self.use_primitive_id and not self.use_instruction:
             raise ValueError(
                 "use_primitive_id=True requires use_instruction=True "
                 "(primitive mode reuses the instruction cross-attention pipeline)."
+            )
+        if self.use_object_id and not self.use_primitive_id:
+            raise ValueError(
+                "use_object_id=True requires use_primitive_id=True."
             )
 
         # Logging
@@ -189,7 +194,9 @@ class DiffuserActorTrainingWorkspace:
             relative=policy_cfg.get("relative", True),
             lang_enhanced=policy_cfg.get("lang_enhanced", True),
             use_primitive_id=policy_cfg.get("use_primitive_id", False),
-            num_primitives=policy_cfg.get("num_primitives", 4),
+            num_primitives=policy_cfg.get("num_primitives", 5),
+            use_object_id=policy_cfg.get("use_object_id", False),
+            num_objects=policy_cfg.get("num_objects", 8),
         )
 
         if self.is_main_process:
@@ -255,17 +262,20 @@ class DiffuserActorTrainingWorkspace:
             train_instructions = None
             val_instructions = None
 
-        # Primitive-ID mode: build a flat {annotation_id -> int} array from the
-        # primitive_lang_ann.npy annotations' `task` field (which holds primitive
-        # names like "grasp"/"push"/"pull"/"place" after preprocessing).
+        # Primitive-ID (and optionally object-ID) mode: build flat int arrays
+        # aligned with annotation_id from the primitive_object_lang_ann.npy file.
         train_primitive_ids = None
         val_primitive_ids = None
+        train_object_ids = None
+        val_object_ids = None
         if self.use_primitive_id:
-            train_primitive_ids = self._load_primitive_ids(
-                dataset_cfg.get("primitive_ann_path_train"), self.cfg.policy
+            train_primitive_ids, train_object_ids = self._load_primitive_object_ids(
+                dataset_cfg.get("primitive_ann_path_train"), self.cfg.policy,
+                load_objects=self.use_object_id,
             )
-            val_primitive_ids = self._load_primitive_ids(
-                dataset_cfg.get("primitive_ann_path_val"), self.cfg.policy
+            val_primitive_ids, val_object_ids = self._load_primitive_object_ids(
+                dataset_cfg.get("primitive_ann_path_val"), self.cfg.policy,
+                load_objects=self.use_object_id,
             )
 
         # Load from config if specified, otherwise default to all 4 CALVIN scenes
@@ -283,6 +293,7 @@ class DiffuserActorTrainingWorkspace:
             root=dataset_cfg.train_path,
             instructions=train_instructions,
             primitive_ids=train_primitive_ids,
+            object_ids=train_object_ids,
             taskvar=taskvar,
             max_episode_length=dataset_cfg.get("max_episode_length", 5),
             cache_size=dataset_cfg.get("cache_size", 100),
@@ -300,6 +311,7 @@ class DiffuserActorTrainingWorkspace:
             root=dataset_cfg.val_path,
             instructions=val_instructions,
             primitive_ids=val_primitive_ids,
+            object_ids=val_object_ids,
             taskvar=taskvar,
             max_episode_length=dataset_cfg.get("max_episode_length", 5),
             cache_size=dataset_cfg.get("cache_size_val", 100),
@@ -317,43 +329,87 @@ class DiffuserActorTrainingWorkspace:
     def _build_instruction(self, sample):
         """Return the conditioning tensor matching the active mode.
 
-        - primitive-id mode: long tensor of shape (B, 1) with ids in [0, K)
-        - CLIP mode:         float tensor of shape (B, 53, 512) CLIP features
-        - no-language mode:  None
+        - primitive+object mode: long tensor (B, 2) — col 0 = primitive_id, col 1 = object_id
+        - primitive-only mode:   long tensor (B, 1)
+        - CLIP mode:             float tensor (B, 53, 512)
+        - no-language mode:      None
         """
         if self.use_primitive_id:
-            return sample["primitive_id"].to(self.device).long()
+            prim = sample["primitive_id"].to(self.device).long()  # (B, 1)
+            if self.use_object_id:
+                obj = sample["object_id"].to(self.device).long()  # (B, 1)
+                return torch.cat([prim, obj], dim=1)               # (B, 2)
+            return prim
         if self.use_instruction:
             return sample["instr"].to(self.device)
         return None
 
-    @staticmethod
-    def _load_primitive_ids(ann_path, policy_cfg):
-        """Load a primitive_lang_ann.npy and map its `task` primitives -> int ids.
+    # Canonical vocabularies — order defines the integer id.
+    PRIMITIVE_VOCAB: dict[str, int] = {
+        "grasp": 0, "push": 1, "pull": 2, "place": 3, "rotate": 4
+    }
+    OBJECT_VOCAB: dict[str, int] = {
+        "block": 0, "blue_block": 1, "drawer_handle": 2, "led_button": 3,
+        "lightbulb_switch": 4, "pink_block": 5, "red_block": 6, "slider_handle": 7,
+    }
 
-        Returns a 1D numpy int array of length N (number of annotations),
-        indexed by `annotation_id` (what `episode[6][0]` carries).
+    @classmethod
+    def _load_primitive_object_ids(
+        cls, ann_path, policy_cfg, *, load_objects: bool = False
+    ) -> tuple:
+        """Load a primitive_object_lang_ann.npy and map primitive/object labels to ints.
+
+        Supports both old format (language.task = bare primitive name) and new
+        format (info.primitive + info.object fields).
+
+        Returns (primitive_ids, object_ids) where each is a 1D int64 numpy array
+        of length N (number of annotations).  object_ids is None when load_objects
+        is False.
         """
         if ann_path is None:
             raise ValueError(
                 "use_primitive_id=True but dataset.primitive_ann_path_{train,val} "
-                "is not set. Point to the primitive_lang_ann.npy produced by "
-                "scripts/preprocess_primitive_annotations.py."
+                "is not set. Point to the primitive_object_lang_ann.npy file in S3."
             )
         ann = np.load(ann_path, allow_pickle=True).item()
-        tasks = list(ann["language"]["task"])
-        # Fixed vocabulary for LangSteer's 4-primitive scheme.
-        vocab = {"grasp": 0, "push": 1, "pull": 2, "place": 3}
-        num_primitives = policy_cfg.get("num_primitives", 4)
-        if len(vocab) != num_primitives:
+        info = ann.get("info", {})
+
+        # Prefer the explicit `info.primitive` field (new format).
+        if "primitive" in info and len(info["primitive"]) > 0:
+            raw_primitives = list(info["primitive"])
+        else:
+            # Fall back to language.task (old format where task == bare primitive).
+            raw_primitives = list(ann["language"]["task"])
+
+        num_primitives = policy_cfg.get("num_primitives", len(cls.PRIMITIVE_VOCAB))
+        prim_ids = np.array(
+            [cls.PRIMITIVE_VOCAB[str(p)] for p in raw_primitives], dtype=np.int64
+        )
+        logger.info(
+            f"Loaded {len(prim_ids)} primitive ids from {ann_path} "
+            f"(vocab size {num_primitives}): "
+            + str({k: int((prim_ids == v).sum()) for k, v in cls.PRIMITIVE_VOCAB.items()})
+        )
+
+        if not load_objects:
+            return prim_ids, None
+
+        if "object" not in info or len(info["object"]) == 0:
             raise ValueError(
-                f"num_primitives={num_primitives} but vocabulary has {len(vocab)}. "
-                "Adjust both if extending the primitive set."
+                f"use_object_id=True but {ann_path} has no info.object field. "
+                "Run scripts/preprocess_primitive_object_annotations.py to regenerate."
             )
-        ids = np.array([vocab[str(t)] for t in tasks], dtype=np.int64)
-        logger.info(f"Loaded {len(ids)} primitive ids from {ann_path}: "
-                    f"{dict((k, int((ids == v).sum())) for k, v in vocab.items())}")
-        return ids
+        raw_objects = list(info["object"])
+        num_objects = policy_cfg.get("num_objects", len(cls.OBJECT_VOCAB))
+        obj_ids = np.array(
+            [cls.OBJECT_VOCAB[str(o)] for o in raw_objects], dtype=np.int64
+        )
+        logger.info(
+            f"Loaded {len(obj_ids)} object ids from {ann_path} "
+            f"(vocab size {num_objects}): "
+            + str({k: int((obj_ids == v).sum()) for k, v in cls.OBJECT_VOCAB.items()})
+        )
+        return prim_ids, obj_ids
 
     @staticmethod
     def _load_instructions(instructions_path, split):
@@ -652,7 +708,9 @@ class DiffuserActorTrainingWorkspace:
                 "use_instruction": self.cfg.policy.get("use_instruction", True),
                 "lang_enhanced": self.cfg.policy.get("lang_enhanced", True),
                 "use_primitive_id": self.cfg.policy.get("use_primitive_id", False),
-                "num_primitives": self.cfg.policy.get("num_primitives", 4),
+                "num_primitives": self.cfg.policy.get("num_primitives", 5),
+                "use_object_id": self.cfg.policy.get("use_object_id", False),
+                "num_objects": self.cfg.policy.get("num_objects", 8),
             },
         }
         if self.ema_model is not None:

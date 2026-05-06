@@ -20,7 +20,7 @@ defaults:
 policy:
   use_instruction: true
   use_primitive_id: true
-  num_primitives: 4
+  num_primitives: 5        # grasp=0, push=1, pull=2, place=3, rotate=4
   lang_enhanced: true
 
 dataset:

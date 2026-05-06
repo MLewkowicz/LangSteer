@@ -1,0 +1,35 @@
+# 3D Diffuser Actor Training — Primitive + Object Conditioning
+# Conditions on both action primitive id AND object identifier id.
+# Data lives at s3://calvin-abcd-dataset-bucket/calvin_object_action/
+# Annotation file: primitive_object_lang_ann.npy (has info.primitive + info.object)
+
+defaults:
+  - diffuser_actor_calvin
+
+policy:
+  use_instruction: true
+  use_primitive_id: true
+  num_primitives: 5        # grasp=0, push=1, pull=2, place=3, rotate=4
+  use_object_id: true
+  num_objects: 8           # block=0, blue_block=1, drawer_handle=2, led_button=3,
+                           # lightbulb_switch=4, pink_block=5, red_block=6, slider_handle=7
+  lang_enhanced: true
+
+dataset:
+  # On SageMaker these are overridden at launch time by train_primitive_object_sagemaker.py
+  # so the env vars below are only used for local runs.
+  train_path: "${oc.env:CALVIN_3DA_PRIM_OBJ_TRAIN_PATH}"
+  val_path: "${oc.env:CALVIN_3DA_PRIM_OBJ_VAL_PATH}"
+  instructions_path: null
+  primitive_ann_path_train: "${oc.env:CALVIN_PRIMITIVE_OBJ_ANN_PATH}/training/lang_annotations/primitive_object_lang_ann.npy"
+  primitive_ann_path_val: "${oc.env:CALVIN_PRIMITIVE_OBJ_ANN_PATH}/validation/lang_annotations/primitive_object_lang_ann.npy"
+  taskvar:
+    - ["A", 0]
+    - ["B", 0]
+    - ["C", 0]
+    - ["D", 0]
+
+train_iters: 200000
+
+checkpoint_dir: "${oc.env:CHECKPOINT_DIR,outputs/checkpoints/diffuser_actor_primitive_object}"
+experiment_name: "diffuser_actor_primitive_object_${now:%Y%m%d_%H%M%S}"

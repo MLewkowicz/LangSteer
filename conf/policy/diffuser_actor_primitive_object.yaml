@@ -1,0 +1,44 @@
+# 3D Diffuser Actor Policy — Primitive + Object Conditioning
+# Conditions on both action primitive (grasp/push/pull/place/rotate) and
+# object identifier (block/blue_block/drawer_handle/...) via two learned
+# nn.Embedding tables concatenated to a (B, 2, D) token sequence.
+
+name: diffuser_actor
+
+ckpt_path: "checkpoints/primitive_object_ABCD.pth"
+device: "cuda"
+
+# Architecture (must match training exactly)
+backbone: clip
+image_size: [256, 256]
+embedding_dim: 192
+num_vis_ins_attn_layers: 2
+use_instruction: true
+use_primitive_id: true
+num_primitives: 5        # grasp=0, push=1, pull=2, place=3, rotate=4
+use_object_id: true
+num_objects: 8           # block=0, blue_block=1, drawer_handle=2, led_button=3,
+                         # lightbulb_switch=4, pink_block=5, red_block=6, slider_handle=7
+fps_subsampling_factor: 3
+gripper_loc_bounds: [[-0.3021, -0.2569, -0.2156], [0.3613, 0.3377, 0.1837]]
+rotation_parametrization: "6D"
+quaternion_format: "wxyz"
+diffusion_timesteps: 25
+nhist: 3
+relative: true
+lang_enhanced: true
+
+# Inference
+pred_horizon: 20
+
+# Camera setup (CALVIN)
+cameras: ["static", "gripper"]
+
+# Image preprocessing
+crop_images: true
+
+mask_language: false
+
+# MCMC Langevin corrector (used with steering)
+corrector_steps: 0
+corrector_step_size: 0.001
