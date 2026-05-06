@@ -32,6 +32,9 @@ dependencies = [
     "openai>=2.27.0",
     "blosc>=1.11.4",
     "wandb>=0.25.1",
+    "kmeans-pytorch>=0.3",
+    "scikit-learn>=1.7.2",
+    "parse>=1.22.0",
 ]
 
 [dependency-groups]

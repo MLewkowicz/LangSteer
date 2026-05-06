@@ -6,7 +6,7 @@ name: calvin
 task: "open_drawer"  # Task name to look up in language annotations
 
 # Dataset/environment settings
-dataset_path: "/home/mlewkowicz/calvin/dataset/task_D_D"  # Path to CALVIN dataset
+dataset_path: "/media/aryannav/T7 Touch/task_D_D"  # Path to CALVIN dataset
 split: "validation"  # Dataset split: "training" or "validation"
 use_gui: false      # Show PyBullet GUI for debugging
 
@@ -15,7 +15,7 @@ num_points: 2048    # Number of points in point cloud
 provide_pcd_images: false  # Provide per-pixel PCD images (required for 3D Diffuser Actor)
 
 # Language annotations
-lang_ann_path: "/home/mlewkowicz/calvin/dataset/task_D_D/validation/lang_annotations/auto_lang_ann.npy"
+lang_ann_path: "/media/aryannav/T7 Touch/task_D_D/validation/lang_annotations/auto_lang_ann.npy"
 
 # Perturbation override: when both are set, task instructions come from the perturbed
 # JSON at the given axis (P1..P4) instead of auto_lang_ann.npy. Used by the

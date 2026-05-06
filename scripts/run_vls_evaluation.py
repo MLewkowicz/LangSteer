@@ -29,9 +29,13 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).parent.parent
 VLS_ROOT = REPO_ROOT / "third_party" / "vls"
-for _p in [str(REPO_ROOT), str(VLS_ROOT)]:
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+# REPO_ROOT inserted at 0 so LangSteer's 'core/' wins over VLS's same-named
+# package.  VLS_ROOT appended last so non-conflicting VLS packages (patches,
+# utils, vlm_query) are still importable at module level.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+if str(VLS_ROOT) not in sys.path:
+    sys.path.append(str(VLS_ROOT))
 
 # Monkey-patch calvin_env Light before any CALVIN imports so scene state dict
 # matches what LangSteerCalvinAdapter expects (same patch VLS main.py applies).
@@ -60,6 +64,43 @@ from envs.vls_calvin_adapter import LangSteerCalvinAdapter
 logger = logging.getLogger(__name__)
 
 
+from contextlib import contextmanager
+
+@contextmanager
+def _vls_import_context():
+    """Temporarily expose VLS's packages, hiding LangSteer's same-named ones.
+
+    Both repos have top-level core/ and utils/ directories.  LangSteer's
+    versions are already cached in sys.modules by the time VLS policy classes
+    are loaded.  This context manager pops those entries, moves VLS_ROOT to
+    the front of sys.path so VLS's packages are found, then restores
+    everything on exit.  Once constructed, VLS objects hold direct references
+    to VLS's modules and don't rely on sys.modules.
+    """
+    _CONFLICT_PREFIXES = ("core", "utils")
+
+    vls_root_str = str(VLS_ROOT)
+    if vls_root_str in sys.path:
+        sys.path.remove(vls_root_str)
+    sys.path.insert(0, vls_root_str)
+
+    saved = {
+        k: sys.modules.pop(k)
+        for k in list(sys.modules)
+        if any(k == p or k.startswith(p + ".") for p in _CONFLICT_PREFIXES)
+    }
+    try:
+        yield
+    finally:
+        for k in list(sys.modules):
+            if any(k == p or k.startswith(p + ".") for p in _CONFLICT_PREFIXES):
+                del sys.modules[k]
+        sys.modules.update(saved)
+        if vls_root_str in sys.path:
+            sys.path.remove(vls_root_str)
+        sys.path.append(vls_root_str)
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="VLS evaluation on CALVIN")
     p.add_argument("--evaluation", required=True,
@@ -73,21 +114,61 @@ def parse_args() -> argparse.Namespace:
                    help="Directory of pre-generated VLS guidance functions (skips VLM queries)")
     p.add_argument("--no-guidance", action="store_true",
                    help="Disable VLS guidance (run base policy only, no VLM queries)")
+    p.add_argument("--record-video", action="store_true",
+                   help="Save an mp4 for every episode into outputs/evaluation/<run>/videos/")
     return p.parse_args()
+
+
+def _find_calvin_conf_dir() -> Path:
+    """Find calvin_env's conf/ directory.
+
+    The conf/ dir is only in the uv git-cache checkout, not in the installed
+    venv package. Search the uv cache dist-info for the checkout root.
+    """
+    import json
+    import calvin_env
+    pkg_dir = Path(calvin_env.__file__).parent
+
+    # Conf dir may be installed alongside the package (editable install, etc.)
+    conf_dir = pkg_dir / "conf"
+    if conf_dir.exists():
+        return conf_dir
+
+    # Search uv git cache via dist-info
+    for dist_info in pkg_dir.parent.glob("calvin_env*.dist-info"):
+        direct_url_file = dist_info / "direct_url.json"
+        if direct_url_file.exists():
+            info = json.loads(direct_url_file.read_text())
+            if "vcs_info" in info:
+                commit = info["vcs_info"]["commit_id"]
+                uv_cache = Path.home() / ".cache" / "uv" / "git-v0" / "checkouts"
+                if uv_cache.exists():
+                    for repo_dir in uv_cache.iterdir():
+                        for checkout in repo_dir.iterdir():
+                            if commit.startswith(checkout.name):
+                                candidate = checkout / "conf"
+                                if candidate.exists():
+                                    return candidate
+
+    raise FileNotFoundError(
+        "calvin_env conf/ directory not found in package or uv git cache. "
+        "Try: ln -s $(find ~/.cache/uv -path '*/calvin_env*/conf' -type d | head -1) "
+        f"{pkg_dir}/conf"
+    )
 
 
 def _load_task_oracle():
     from calvin_env.envs.tasks import Tasks
-    tasks_cfg_path = _find_calvin_data_dir().parent / "conf" / "tasks" / "new_playtable_tasks.yaml"
+    tasks_cfg_path = _find_calvin_conf_dir() / "tasks" / "new_playtable_tasks.yaml"
     tasks_cfg = OmegaConf.load(str(tasks_cfg_path))
     return Tasks(tasks_cfg.tasks)
 
 
 def _load_vls_policy(vls_cfg: dict, adapter: LangSteerCalvinAdapter):
     """Load DiffusionPolicySteer and wire up pre/post-processors."""
-    sys.path.insert(0, str(VLS_ROOT))
-    from core.diffusion_policy_steer import DiffusionPolicySteer
-    from lerobot.policies.factory import make_pre_post_processors
+    with _vls_import_context():
+        from core.diffusion_policy_steer import DiffusionPolicySteer
+        from lerobot.policies.factory import make_pre_post_processors
 
     pretrained = vls_cfg.get("policy_pretrained", "Vision-Language-Steering/vls_calvin_base")
     logger.info(f"Loading VLS policy from: {pretrained}")
@@ -115,10 +196,10 @@ def _load_vls_policy(vls_cfg: dict, adapter: LangSteerCalvinAdapter):
 
 def _load_perception_components(vls_cfg: dict, adapter: LangSteerCalvinAdapter):
     """Load KeypointDetector and VLMAgent (heavy models loaded once)."""
-    sys.path.insert(0, str(VLS_ROOT))
-    from core.keypoint_detector import KeypointDetector
-    from core.keypoint_tracker import KeypointTracker
-    from vlm_query.vlm_agent import VLMAgent
+    with _vls_import_context():
+        from core.keypoint_detector import KeypointDetector
+        from core.keypoint_tracker import KeypointTracker
+        from vlm_query.vlm_agent import VLMAgent
 
     kp_cfg = dict(vls_cfg.get("keypoint_detector", {}))
     kp_cfg.setdefault("device", "cuda")
@@ -149,9 +230,9 @@ def _prepare_episode_guidance(
     cached_functions_dir: Optional[str],
 ) -> Optional[Dict]:
     """Run keypoint detection and VLM query; return guidance_fns dict or None on failure."""
-    sys.path.insert(0, str(VLS_ROOT))
-    from utils.guidance_utils import load_functions_from_txt
     import json
+    with _vls_import_context():
+        from utils.guidance_utils import load_functions_from_txt
 
     try:
         rgb, depth, points, segmentation, segment_id_to_name = (
@@ -219,8 +300,9 @@ def _run_one_episode(
     vls_cfg: dict,
     max_steps: int,
     use_guidance: bool,
+    video_path: Optional[Path] = None,
 ) -> Tuple[bool, int, float]:
-    """Inner step loop — mirrors VLS Main._run_episode() without video/plotting."""
+    """Inner step loop — mirrors VLS Main._run_episode()."""
     action_horizon = policy._action_chunk_horizon
     action_executed = 0
     action_chunk = None
@@ -240,6 +322,8 @@ def _run_one_episode(
     use_fkd = vls_cfg.get("use_fkd", False)
 
     current_guidance_fns = (guidance_fns or {}).get(current_stage, []) if use_guidance else None
+
+    frames: List[np.ndarray] = [] if video_path is not None else None
 
     while not done and global_steps < max_steps:
         generate_new_chunk = (action_executed == 0)
@@ -278,9 +362,17 @@ def _run_one_episode(
         global_steps += 1
         action_executed = (action_executed + 1) % action_horizon
 
+        if frames is not None:
+            frames.append(adapter.get_vlm_image())
+
         if terminated or truncated:
             success = info.get("success", False)
             done = True
+
+    if frames is not None and frames:
+        import imageio
+        video_path.parent.mkdir(parents=True, exist_ok=True)
+        imageio.mimwrite(str(video_path), frames, fps=10)
 
     return success, global_steps, total_reward
 
@@ -297,6 +389,7 @@ def run_vls_condition(
     use_guidance: bool,
     cached_functions_dir: Optional[str],
     output_dir: Path,
+    record_video: bool = False,
 ):
     vls_cfg = eval_cfg.get("vls", {})
     task_instructions = load_language_annotations(hydra_cfg.env.lang_ann_path)
@@ -389,10 +482,23 @@ def run_vls_condition(
                 adapter.reset()
                 use_guidance_this_ep = False
 
+            video_path = None
+            if record_video:
+                outcome = "success" if True else "fail"  # filled in after run
+                video_path = output_dir / "videos" / task_name / f"ep{ep_idx:04d}.mp4"
+
             success, steps, reward = _run_one_episode(
                 adapter, policy, preprocessor, keypoint_tracker,
                 guidance_fns, vls_cfg, max_steps, use_guidance_this_ep,
+                video_path=video_path,
             )
+
+            if record_video and video_path is not None:
+                # Rename to include outcome now that we know it
+                outcome = "success" if success else "fail"
+                final_path = video_path.with_name(f"ep{ep_idx:04d}_{outcome}.mp4")
+                if video_path.exists():
+                    video_path.rename(final_path)
 
             results["tasks"][task_name]["episodes"].append({
                 "episode_idx": ep_idx,
@@ -472,6 +578,7 @@ def main():
         use_guidance=use_guidance,
         cached_functions_dir=args.cached_functions_dir,
         output_dir=output_dir,
+        record_video=args.record_video,
     )
 
     logger.info(f"Results saved to: {results_path}")

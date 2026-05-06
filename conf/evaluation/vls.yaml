@@ -3,7 +3,7 @@ condition_name: "VLS"
 
 vls:
   # HuggingFace pretrained path or local checkpoint directory
-  policy_pretrained: "Vision-Language-Steering/vls_calvin_base"
+  policy_pretrained: "checkpoints/vls_calvin_dp_base"
 
   # Number of diffusion particles (batch size for guidance)
   sample_batch_size: 20

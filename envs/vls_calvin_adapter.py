@@ -86,6 +86,23 @@ class LangSteerCalvinAdapter(CalvinAdapter):
         self._staged_robot_obs: Optional[np.ndarray] = None
         self._staged_scene_obs: Optional[np.ndarray] = None
 
+        # _robot_base_pose is never set by VLS's CalvinAdapter (bug). Initialise
+        # it from PyBullet using the robot body's actual base position/orientation.
+        self._robot_base_pose = self._get_robot_base_pose_from_pybullet()
+
+    def _get_robot_base_pose_from_pybullet(self):
+        """Query PyBullet for the robot base pose and return a VLS Pose3D."""
+        import pybullet as p
+        Pose3D = sys.modules["vls.core.env_adapters.base_adapter"].Pose3D
+
+        robot = self._env.robot
+        cid = robot.cid
+        pos, orn_xyzw = p.getBasePositionAndOrientation(robot.robot_uid, physicsClientId=cid)
+        # PyBullet returns quaternion as [x, y, z, w]; Pose3D expects [w, x, y, z]
+        orn_wxyz = [orn_xyzw[3], orn_xyzw[0], orn_xyzw[1], orn_xyzw[2]]
+        return Pose3D(position=np.array(pos, dtype=np.float32),
+                      quaternion=np.array(orn_wxyz, dtype=np.float32))
+
     def stage_starting_condition(
         self,
         robot_obs: np.ndarray,
@@ -140,6 +157,58 @@ class LangSteerCalvinAdapter(CalvinAdapter):
             pass
 
         return False, "no_behavior"
+
+    def get_keypoint_detection_inputs(self):
+        """Render RGB, depth, and segmentation via PyBullet at 640×640.
+
+        VLS's CalvinAdapter calls render(mode="rgb+depth+segmentation", height=..., width=...)
+        which is only supported by the Treeeplanter/calvin_env fork, not the standard build
+        in our venv.  We replicate the same output using pybullet.getCameraImage() directly,
+        then delegate segmentation processing to the parent class.
+        """
+        import pybullet as p
+
+        W, H = 640, 640
+        cam = self._env.cameras[0]  # static camera
+
+        proj_matrix = p.computeProjectionMatrixFOV(
+            cam.fov, W / H, cam.nearval, cam.farval,
+            physicsClientId=cam.cid,
+        )
+        _, _, rgba, depth_buf, seg_raw = p.getCameraImage(
+            W, H, cam.viewMatrix, proj_matrix,
+            physicsClientId=cam.cid,
+        )
+
+        rgb = np.array(rgba, dtype=np.uint8)[:, :, :3]
+
+        # Convert normalised depth buffer [0,1] → metres
+        near, far = cam.nearval, cam.farval
+        depth = far * near / (far - (far - near) * np.array(depth_buf, dtype=np.float32))
+
+        seg_raw = np.array(seg_raw, dtype=np.int32).reshape(H, W)
+
+        segmentation, _, segment_id_to_name = self.process_segmentation(seg_raw)
+        camera_params = self.get_camera_params(self.vlm_camera)
+        points = self._depth_to_pointcloud(depth, camera_params)
+
+        return rgb, depth, points, segmentation, segment_id_to_name
+
+    def get_vlm_image(self):
+        """Return a 640×640 RGB image from the static camera via PyBullet."""
+        import pybullet as p
+
+        W, H = 640, 640
+        cam = self._env.cameras[0]
+        proj_matrix = p.computeProjectionMatrixFOV(
+            cam.fov, W / H, cam.nearval, cam.farval,
+            physicsClientId=cam.cid,
+        )
+        _, _, rgba, _, _ = p.getCameraImage(
+            W, H, cam.viewMatrix, proj_matrix,
+            physicsClientId=cam.cid,
+        )
+        return np.array(rgba, dtype=np.uint8)[:, :, :3]
 
     def get_instruction(self) -> str:
         return self._env_config.get("instruction", "")
