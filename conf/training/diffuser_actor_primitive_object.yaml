@@ -1,0 +1,49 @@
+# 3D Diffuser Actor Training — Primitive + Object Conditioning
+# Two parallel embedding tables (primitive_embedding + object_embedding)
+# concatenated to (B, 2, D) and fed through the existing instruction
+# cross-attention pipeline.
+#
+# Required prerequisites (run locally, then upload primitive_object_lang_ann.npy
+# alongside the .dat files in S3):
+#   1. python scripts/preprocess_primitive_object_annotations.py \
+#        --dataset_path $CALVIN_DATASET_PATH/task_ABC_D \
+#        --split training --output_path .../primitive_object_lang_ann.npy
+#   2. python -m training.policies.diffuser_actor.preprocessing.package_calvin \
+#        --root_dir $CALVIN_DATASET_PATH/task_ABC_D \
+#        --save_path .../packaged_primitive_object \
+#        --split training \
+#        --lang_ann_file primitive_object_lang_ann.npy
+
+defaults:
+  - diffuser_actor_calvin
+
+policy:
+  use_instruction: true
+  use_primitive_id: true
+  num_primitives: 5         # grasp/push/pull/place/rotate
+  use_object_id: true
+  num_objects: 8            # ALPHABETICAL ORDER (do not reorder without retraining):
+                            # block=0, blue_block=1, drawer_handle=2, led_button=3,
+                            # lightbulb_switch=4, pink_block=5, red_block=6, slider_handle=7
+  lang_enhanced: true
+
+dataset:
+  # Primitive+object-packaged .dat files (episodes split per primitive stage,
+  # with rotate splitting some episodes differently than primitive-only).
+  train_path: "${oc.env:CALVIN_3DA_PRIMITIVE_OBJECT_DATASET_PATH,/home/mlewkowicz/LangSteer/cache/diffuser_actor_data_primitive_object}/training"
+  val_path: "${oc.env:CALVIN_3DA_PRIMITIVE_OBJECT_DATASET_PATH,/home/mlewkowicz/LangSteer/cache/diffuser_actor_data_primitive_object}/validation"
+  # instructions_path is not consumed when use_primitive_id=true.
+  instructions_path: null
+  # Raw primitive_object_lang_ann.npy — supplies info.primitive AND info.object.
+  primitive_ann_path_train: "${oc.env:CALVIN_PRIMITIVE_OBJECT_ANN_PATH,/home/mlewkowicz/calvin/dataset/task_D_D}/training/lang_annotations/primitive_object_lang_ann.npy"
+  primitive_ann_path_val: "${oc.env:CALVIN_PRIMITIVE_OBJECT_ANN_PATH,/home/mlewkowicz/calvin/dataset/task_D_D}/validation/lang_annotations/primitive_object_lang_ann.npy"
+  taskvar:
+    - ["A", 0]
+    - ["B", 0]
+    - ["C", 0]
+    - ["D", 0]
+
+train_iters: 200000
+
+checkpoint_dir: "outputs/checkpoints/diffuser_actor_primitive_object"
+experiment_name: "diffuser_actor_primitive_object_${now:%Y%m%d_%H%M%S}"
