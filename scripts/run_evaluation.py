@@ -55,6 +55,13 @@ def parse_args():
         help="Output directory. If it contains existing results, the run resumes/extends.",
     )
     parser.add_argument(
+        "--tasks", type=str, default=None,
+        help="Path to a JSON file with a 'tasks' list. Overrides (and reorders) "
+             "the task list from each --evaluation config. Tasks not present in "
+             "an eval condition's own task list are silently skipped for that "
+             "condition. Useful for running a curated subset (e.g. skip rotations).",
+    )
+    parser.add_argument(
         "--perturbation-axis", type=str, default=None, choices=["P1", "P2", "P3", "P4"],
         help="Use perturbed instructions from perturbed_language_annotations.json at this "
              "axis (P1..P4). P4 additionally filters starting conditions to indices listed "
@@ -180,6 +187,20 @@ def wire_steering(steering, policy, cfg):
         )
         steering.set_trajectory_loader(loader)
         logger.info("Initialized reference trajectory loader for steering")
+    if (
+        hasattr(steering, "set_primitive_callback")
+        and hasattr(policy, "set_primitive")
+        and getattr(policy, "_use_primitive_id", False)
+    ):
+        steering.set_primitive_callback(policy.set_primitive)
+        logger.info("Wired primitive-id callback: steering → policy.set_primitive")
+    if (
+        hasattr(steering, "set_object_callback")
+        and hasattr(policy, "set_object")
+        and getattr(policy, "_use_object_id", False)
+    ):
+        steering.set_object_callback(policy.set_object)
+        logger.info("Wired object-id callback: steering → policy.set_object")
 
 
 def setup_voxposer_episode(steering, env):
@@ -315,9 +336,14 @@ def run_condition(
                         block_aabbs=state.get("block_aabbs"),
                     )
                 if steering is not None and hasattr(steering, "check_stage_transition"):
-                    steering.check_stage_transition(obs.ee_pose[:3])
+                    steering.check_stage_transition(
+                        obs.ee_pose[:3], float(obs.ee_pose[6])
+                    )
                 if steering is not None and hasattr(steering, "update_dash"):
                     steering.update_dash(obs.ee_pose[:3])
+                    steering.check_stage_transition(
+                        obs.ee_pose[:3], float(obs.ee_pose[6])
+                    )
 
             result = runner.run_episode(
                 initial_obs=obs, reset_env=False, reset_policy=True,
@@ -425,6 +451,25 @@ def main():
         eval_cfg = OmegaConf.to_container(OmegaConf.load(str(eval_path)), resolve=True)
         eval_configs.append((name, eval_cfg))
 
+    # Optional curated task list / ordering. Filters each condition's task list
+    # to the intersection (preserving the JSON's order), so a single run can
+    # skip e.g. all rotations while still using the per-condition configs.
+    if args.tasks is not None:
+        tasks_path = Path(args.tasks)
+        if not tasks_path.exists():
+            logger.error(f"--tasks file not found: {tasks_path}")
+            sys.exit(1)
+        with open(tasks_path) as f:
+            tasks_data = json.load(f)
+        ordered_tasks = tasks_data["tasks"] if isinstance(tasks_data, dict) else tasks_data
+        for _, eval_cfg in eval_configs:
+            eval_tasks = set(eval_cfg["tasks"])
+            eval_cfg["tasks"] = [t for t in ordered_tasks if t in eval_tasks]
+        logger.info(
+            f"Task list overridden from {tasks_path}: "
+            f"{len(ordered_tasks)} tasks requested"
+        )
+
     # All tasks (union across configs, preserving order from first)
     all_tasks = eval_configs[0][1]["tasks"]
     logger.info(f"Evaluating {len(all_tasks)} tasks, {args.num_episodes} episodes each")
@@ -491,6 +536,8 @@ def main():
             overrides.insert(0, f"policy={eval_cfg['policy_config']}")
         for key, value in eval_cfg["policy"].items():
             overrides.append(f"policy.{key}={value}")
+        for key, value in eval_cfg.get("steering_overrides", {}).items():
+            overrides.append(f"steering.{key}={value}")
         if args.perturbation_axis is not None:
             overrides += [
                 "env.perturbed_ann_path=perturbed_language_annotations.json",

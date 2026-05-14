@@ -116,7 +116,7 @@ class ValueMapVisualizer:
                 isomin=0.01, isomax=float(aff_ds.max()),
                 opacity=self.costmap_opacity,
                 surface_count=self.costmap_surface_count,
-                colorscale='Hot',
+                colorscale='Greens',
                 showscale=False,
                 name='affordance',
             ))
@@ -143,7 +143,7 @@ class ValueMapVisualizer:
                 isomin=0.01, isomax=float(avoid_ds.max()),
                 opacity=self.costmap_opacity * 0.7,
                 surface_count=self.costmap_surface_count,
-                colorscale='Blues',
+                colorscale='Reds',
                 showscale=False,
                 name='avoidance',
             ))
@@ -224,41 +224,50 @@ class ValueMapVisualizer:
                 'light_switch': 'gold', 'switch': 'gold', 'led': 'gold',
                 'button': 'orange', 'table': 'gray',
             }
+            from voxposer.calvin_interface import obb_world_corners
             for obj in objects:
                 name = obj.get('name', '?')
+                if name == 'switch':
+                    continue  # Hide switch from costmap rendering (light_switch overlays it)
                 aabb = obj.get('aabb')
                 pos_world = obj.get('_position_world')
                 if aabb is None or pos_world is None:
                     continue
-                # Convert AABB from voxel to world coords
-                aabb_world = voxel2pc(
-                    np.array(aabb, dtype=np.float32),
-                    value_map.workspace_bounds_min,
-                    value_map.workspace_bounds_max,
-                    value_map.map_size,
-                )
-                bmin, bmax = aabb_world[0], aabb_world[1]
+
                 # Pick color
                 color = 'orange'
                 for key, col in _OBJ_COLORS.items():
                     if key in name.lower():
                         color = col
                         break
-                # 12 edges of a box as line segments (with None separators)
-                corners = np.array([
-                    [bmin[0], bmin[1], bmin[2]],
-                    [bmax[0], bmin[1], bmin[2]],
-                    [bmax[0], bmax[1], bmin[2]],
-                    [bmin[0], bmax[1], bmin[2]],
-                    [bmin[0], bmin[1], bmax[2]],
-                    [bmax[0], bmin[1], bmax[2]],
-                    [bmax[0], bmax[1], bmax[2]],
-                    [bmin[0], bmax[1], bmax[2]],
-                ])
+
+                # Prefer the OBB (rotated) corners when the Observation carries
+                # obb_* fields; fall back to the axis-aligned AABB otherwise
+                # (table, ee, and any legacy observations).
+                obb_center = obj.get('obb_center_world')
+                obb_size = obj.get('obb_size')
+                obb_rot = obj.get('obb_rotation')
+                if obb_center is not None and obb_size is not None and obb_rot is not None:
+                    corners = obb_world_corners(
+                        np.asarray(obb_center, dtype=np.float32),
+                        np.asarray(obb_size, dtype=np.float32),
+                        np.asarray(obb_rot, dtype=np.float32),
+                    )
+                else:
+                    aabb_world = voxel2pc(
+                        np.array(aabb, dtype=np.float32),
+                        value_map.workspace_bounds_min,
+                        value_map.workspace_bounds_max,
+                        value_map.map_size,
+                    )
+                    bmin, bmax = aabb_world[0], aabb_world[1]
+                    corners = obb_world_corners(
+                        (bmin + bmax) / 2.0, (bmax - bmin), np.eye(3),
+                    )
                 # Edge connectivity: pairs of corner indices
                 edges = [
-                    (0,1),(1,2),(2,3),(3,0),  # bottom face
-                    (4,5),(5,6),(6,7),(7,4),  # top face
+                    (0,1),(1,3),(3,2),(2,0),  # bottom face
+                    (4,5),(5,7),(7,6),(6,4),  # top face
                     (0,4),(1,5),(2,6),(3,7),  # verticals
                 ]
                 xs, ys, zs = [], [], []

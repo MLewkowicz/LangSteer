@@ -328,9 +328,10 @@ class RLBenchDataset(Dataset):
             "pcds": pcds,
             "action": action,
             "instr": instr,
-            # Dummy sentinel; RLBenchDataset path doesn't support primitive-id
-            # training, but the collate fn expects this key.
+            # Dummy sentinels; RLBenchDataset path doesn't support primitive/object-id
+            # training, but the collate fn expects these keys.
             "primitive_id": torch.full((len(rgbs), 1), -1, dtype=torch.long),
+            "object_id": torch.full((len(rgbs), 1), -1, dtype=torch.long),
             "curr_gripper": gripper,
             "curr_gripper_history": gripper_history,
         }
@@ -359,6 +360,7 @@ class CalvinDataset(RLBenchDataset):
         root,
         instructions=None,
         primitive_ids=None,
+        object_ids=None,
         taskvar=[('close_door', 0)],
         max_episode_length=5,
         cache_size=0,
@@ -394,6 +396,7 @@ class CalvinDataset(RLBenchDataset):
 
         self._instructions = instructions
         self._primitive_ids = primitive_ids  # optional np.ndarray[int] aligned with annotation_id
+        self._object_ids = object_ids        # optional np.ndarray[int] aligned with annotation_id
         self._num_vars = Counter()
         for root, (task, var) in itertools.product(self._root, taskvar):
             data_dir = root / f"{task}+{var}"
@@ -481,6 +484,13 @@ class CalvinDataset(RLBenchDataset):
         else:
             primitive_id = torch.full((len(rgbs), 1), -1, dtype=torch.long)
 
+        # Object-id conditioning (parallel to primitive_id).
+        if self._object_ids is not None:
+            oid = int(self._object_ids[instr_ind])
+            object_id = torch.full((len(rgbs), 1), oid, dtype=torch.long)
+        else:
+            object_id = torch.full((len(rgbs), 1), -1, dtype=torch.long)
+
         gripper = torch.cat([episode[4][i] for i in frame_ids])
 
         # gripper history
@@ -567,6 +577,7 @@ class CalvinDataset(RLBenchDataset):
             "action": action,
             "instr": instr,
             "primitive_id": primitive_id,
+            "object_id": object_id,
             "curr_gripper": gripper,
             "curr_gripper_history": gripper_history,
         }
@@ -605,6 +616,10 @@ def traj_collate_fn(batch):
     if all("primitive_id" in item for item in batch):
         ret_dict["primitive_id"] = torch.cat(
             [item["primitive_id"].long() for item in batch]
+        )
+    if all("object_id" in item for item in batch):
+        ret_dict["object_id"] = torch.cat(
+            [item["object_id"].long() for item in batch]
         )
     ret_dict["task"] = []
     for item in batch:

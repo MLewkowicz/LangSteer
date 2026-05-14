@@ -51,6 +51,19 @@ class RolloutVisualizationConfig:
 
 
 @dataclass
+class LiveCostmapConfig:
+    """Configuration for the live tkinter costmap window.
+
+    Drives `visualization/renderers/costmap_tk.py:LiveCostmapWindow`. The
+    window mirrors `VoxPoserSteering._value_map` in real time alongside the
+    PyBullet view, replacing the old browser-based Dash server.
+    """
+    refresh_interval: int = 1   # tick the window every N env steps
+    downsample: int = 4         # voxel-grid stride for affordance/avoidance scatters
+    point_threshold: float = 0.05  # min normalized intensity to render a voxel
+
+
+@dataclass
 class VideoConfig:
     """Configuration for video recording."""
     enabled: bool = False
@@ -63,6 +76,9 @@ class VideoConfig:
     static_record_height: int = 0
     gripper_record_width: int = 0
     gripper_record_height: int = 0
+    # Optional FOV override for static camera re-renders (degrees).
+    # None = use CALVIN's native FOV.
+    static_camera_fov: Optional[float] = None
 
 
 @dataclass
@@ -85,6 +101,7 @@ class VisualizationConfig:
     cameras: bool = False
     trajectory_3d: bool = False
     reference_plot: bool = False
+    live_costmap: bool = False
 
     # Sub-configurations for each mode
     camera: CameraVisualizationConfig = field(default_factory=CameraVisualizationConfig)
@@ -93,6 +110,7 @@ class VisualizationConfig:
     rollout: RolloutVisualizationConfig = field(default_factory=RolloutVisualizationConfig)
     # video.enabled acts as the toggle for video recording
     video: VideoConfig = field(default_factory=VideoConfig)
+    live_costmap_cfg: LiveCostmapConfig = field(default_factory=LiveCostmapConfig)
 
     @classmethod
     def from_dict(cls, config_dict: dict) -> 'VisualizationConfig':
@@ -102,6 +120,7 @@ class VisualizationConfig:
         cameras = config_dict.get('cameras', False)
         trajectory_3d = config_dict.get('trajectory_3d', False)
         reference_plot = config_dict.get('reference_plot', False)
+        live_costmap = config_dict.get('live_costmap', False)
 
         # Extract sub-configs
         camera_config = CameraVisualizationConfig(**config_dict.get('camera', {}))
@@ -109,19 +128,24 @@ class VisualizationConfig:
         reference_config = ReferenceVisualizationConfig(**config_dict.get('reference', {}))
         rollout_config = RolloutVisualizationConfig(**config_dict.get('rollout', {}))
         video_config = VideoConfig(**config_dict.get('video', {}))
+        live_costmap_config = LiveCostmapConfig(**config_dict.get('live_costmap_cfg', {}))
 
         return cls(
             render=render,
             cameras=cameras,
             trajectory_3d=trajectory_3d,
             reference_plot=reference_plot,
+            live_costmap=live_costmap,
             camera=camera_config,
             trajectory=trajectory_config,
             reference=reference_config,
             rollout=rollout_config,
             video=video_config,
+            live_costmap_cfg=live_costmap_config,
         )
 
     def is_any_enabled(self) -> bool:
         """Check if any visualization mode is enabled."""
-        return self.render or self.cameras or self.trajectory_3d or self.reference_plot or self.video.enabled
+        return (self.render or self.cameras or self.trajectory_3d
+                or self.reference_plot or self.video.enabled
+                or self.live_costmap)

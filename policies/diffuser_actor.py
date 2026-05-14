@@ -59,10 +59,16 @@ class DiffuserActorPolicy(BasePolicy):
         lang_enhanced = cfg.get("lang_enhanced", True)
         use_primitive_id = cfg.get("use_primitive_id", False)
         num_primitives = cfg.get("num_primitives", 4)
+        use_object_id = cfg.get("use_object_id", False)
+        num_objects = cfg.get("num_objects", 8)
         if use_primitive_id and not use_instruction:
             raise ValueError(
                 "use_primitive_id=True requires use_instruction=True "
                 "(primitive mode reuses the instruction cross-attention pipeline)."
+            )
+        if use_object_id and not use_primitive_id:
+            raise ValueError(
+                "use_object_id=True requires use_primitive_id=True."
             )
 
         self.nhist = nhist
@@ -70,7 +76,10 @@ class DiffuserActorPolicy(BasePolicy):
         self._use_instruction = use_instruction
         self._use_primitive_id = use_primitive_id
         self._num_primitives = num_primitives
+        self._use_object_id = use_object_id
+        self._num_objects = num_objects
         self._current_primitive_id: Optional[int] = None
+        self._current_object_id: Optional[int] = None
         self.camera_names = cfg.get("cameras", ["static", "gripper"])
         self.pred_horizon = cfg.get("pred_horizon", 1)
         self.crop_images = cfg.get("crop_images", True)
@@ -99,6 +108,8 @@ class DiffuserActorPolicy(BasePolicy):
             lang_enhanced=lang_enhanced,
             use_primitive_id=use_primitive_id,
             num_primitives=num_primitives,
+            use_object_id=use_object_id,
+            num_objects=num_objects,
         )
         self._model.to(self._device)
         self._model.eval()
@@ -172,6 +183,19 @@ class DiffuserActorPolicy(BasePolicy):
                 f"primitive_id={primitive_id} out of range [0, {self._num_primitives})"
             )
         self._current_primitive_id = int(primitive_id)
+
+    def set_object(self, object_id: int) -> None:
+        """Set the current object index for primitive+object conditioning mode."""
+        if not self._use_object_id:
+            raise RuntimeError(
+                "set_object() called but policy was built with "
+                "use_object_id=False. Rebuild with use_object_id=True."
+            )
+        if not (0 <= object_id < self._num_objects):
+            raise ValueError(
+                f"object_id={object_id} out of range [0, {self._num_objects})"
+            )
+        self._current_object_id = int(object_id)
 
     def _get_instruction_embedding(self, instruction_text: str) -> torch.Tensor:
         """
@@ -365,12 +389,29 @@ class DiffuserActorPolicy(BasePolicy):
                 if self._current_primitive_id is None:
                     raise RuntimeError(
                         "Primitive-id mode active but no primitive set. "
-                        "Call policy.set_primitive(idx) before inference."
+                        "The policy expects a steering module (e.g. "
+                        "steering=voxposer) to drive set_primitive(idx) at "
+                        "every stage transition. Either add steering=voxposer "
+                        "to your run, or call policy.set_primitive(idx) "
+                        "manually before each forward()."
                     )
-                instr_emb = torch.tensor(
-                    [[self._current_primitive_id]],
-                    dtype=torch.long, device=self._device,
-                )  # (1, 1)
+                if self._use_object_id:
+                    if self._current_object_id is None:
+                        raise RuntimeError(
+                            "Object-id mode active but no object set. "
+                            "Add steering=voxposer (whose composer emits "
+                            "object slots in every stage tuple) or call "
+                            "policy.set_object(idx) manually before forward()."
+                        )
+                    instr_emb = torch.tensor(
+                        [[self._current_primitive_id, self._current_object_id]],
+                        dtype=torch.long, device=self._device,
+                    )  # (1, 2)
+                else:
+                    instr_emb = torch.tensor(
+                        [[self._current_primitive_id]],
+                        dtype=torch.long, device=self._device,
+                    )  # (1, 1)
             elif self._use_instruction:
                 instr_emb = self._get_instruction_embedding(obs.instruction)
                 instr_emb = instr_emb.unsqueeze(0)  # (1, seq_len, 512)
@@ -384,7 +425,13 @@ class DiffuserActorPolicy(BasePolicy):
                 logger.info(f"[Diag] gripper[-1]: pos={g[:3].cpu().numpy()}, quat={g[3:7].cpu().numpy()}, "
                             f"quat_norm={g[3:7].norm().item():.4f}")
                 if self._use_primitive_id:
-                    logger.info(f"[Diag] primitive_id={self._current_primitive_id}")
+                    if self._use_object_id:
+                        logger.info(
+                            f"[Diag] primitive_id={self._current_primitive_id} "
+                            f"object_id={self._current_object_id}"
+                        )
+                    else:
+                        logger.info(f"[Diag] primitive_id={self._current_primitive_id}")
                 elif self._use_instruction:
                     logger.info(f"[Diag] instr: shape={instr_emb.shape}, norm={instr_emb.norm().item():.3f}")
                     logger.info(f"[Diag] instruction: '{obs.instruction}'"
@@ -405,6 +452,10 @@ class DiffuserActorPolicy(BasePolicy):
                 # Provide current gripper position for relative coordinate conversion
                 if hasattr(steering, 'set_current_gripper_pos'):
                     steering.set_current_gripper_pos(obs.ee_pose[:3])
+                # Forward-compat plumbing for rotation-aware steering. ee_pose
+                # encodes orientation as Euler XYZ at indices [3:6].
+                if hasattr(steering, 'set_current_gripper_rotation'):
+                    steering.set_current_gripper_rotation(obs.ee_pose[3:6])
 
                 def _steering_fn(trajectory, timestep, fixed_inputs, model_output):
                     return steering.get_guidance(

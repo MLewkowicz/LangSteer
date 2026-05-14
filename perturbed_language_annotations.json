@@ -24,14 +24,14 @@
         "P4": "Push the door."
     },
     "turn_on_led": {
-        "P1": "turn on the green lamp",
-        "P2": "push down the button to turn on the green light",
+        "P1": "push down the button to turn on the green light",
+        "P2": "toggle the button to turn on the led",
         "P3": "Reach out and firmly press the small button to turn on the bright green LED.",
         "P4": "Turn on the light."
     },
     "turn_off_led": {
-        "P1": "turn off the green lamp",
-        "P2": "toggle the button to turn off the green light",
+        "P1": "push down the button to turn off the green light",
+        "P2": "toggle the button to turn off the led",
         "P3": "Reach out and firmly press the small button to shut off the bright green LED.",
         "P4": "Turn off the light."
     },

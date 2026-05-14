@@ -13,6 +13,7 @@ visualization:
   cameras: false             # Camera feed visualization (from visualize_cameras.py)
   trajectory_3d: false       # Multi-rollout 3D trajectory analysis (from visualize_trajectories.py)
   reference_plot: false      # Reference trajectory matplotlib plots (from visualize_reference.py)
+  live_costmap: false        # Live tk window mirroring VoxPoser's active value map (3D, rotatable)
 
   # Camera visualization options
   camera:
@@ -58,3 +59,9 @@ visualization:
     save_path: "outputs/videos"
     fps: 30
     codec: "mp4v"
+
+  # Live tk costmap window settings (used when live_costmap: true)
+  live_costmap_cfg:
+    refresh_interval: 1     # tick the window every N env steps
+    downsample: 4           # voxel-grid stride for affordance/avoidance scatters
+    point_threshold: 0.05   # min normalized intensity to render a voxel

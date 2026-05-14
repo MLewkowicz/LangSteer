@@ -137,6 +137,22 @@ def main(cfg: DictConfig) -> None:
             steering.set_trajectory_loader(loader)
             logger.info("Initialized reference trajectory loader for steering")
 
+        # Primitive-id conditioning: when both sides support it, register the
+        # callback so each stage transition triggers policy.set_primitive(id).
+        # No-op for CLIP / no-language policies or non-primitive steering modules.
+        if (hasattr(steering, 'set_primitive_callback')
+                and hasattr(policy, 'set_primitive')
+                and getattr(policy, '_use_primitive_id', False)):
+            steering.set_primitive_callback(policy.set_primitive)
+            logger.info("Wired primitive-id callback: steering → policy.set_primitive")
+
+        # Object-id conditioning: parallel callback for primitive+object policies.
+        if (hasattr(steering, 'set_object_callback')
+                and hasattr(policy, 'set_object')
+                and getattr(policy, '_use_object_id', False)):
+            steering.set_object_callback(policy.set_object)
+            logger.info("Wired object-id callback: steering → policy.set_object")
+
     # Setup logging
     enable_gui = cfg.get("enable_gui", False)
     log_trajectory = cfg.get("log_trajectory", False)
@@ -168,11 +184,22 @@ def main(cfg: DictConfig) -> None:
         obs = None
         use_reference_init = cfg.get('use_reference_init', False)
 
+        # episode_id override: load a specific dataset episode as initial conditions
+        episode_id_override = cfg.get('episode_id', None)
+        if episode_id_override is not None:
+            ep_path = Path(cfg.env.dataset_path) / cfg.env.split / f"episode_{int(episode_id_override):07d}.npz"
+            data = np.load(str(ep_path))
+            _ep_robot_obs = data['robot_obs'].astype(np.float32)
+            _ep_scene_obs = data['scene_obs'].astype(np.float32)
+            logger.info(f"Loading starting state from dataset episode {int(episode_id_override):07d}")
+        else:
+            _ep_robot_obs = _ep_scene_obs = None
+
         if steering is not None and hasattr(steering, 'setup_episode'):
             if cfg.steering.name == "voxposer":
                 # VoxPoser steering: reset env first, then generate value maps
                 # using the actual scene state
-                obs = env.reset()
+                obs = env.reset(robot_obs=_ep_robot_obs, scene_obs=_ep_scene_obs)
                 state = env.get_scene_state()
                 # steering.instruction overrides the instruction used for value maps
                 # (independent from the policy instruction in env.task_description)
@@ -194,10 +221,10 @@ def main(cfg: DictConfig) -> None:
                 robot_obs, scene_obs = steering.setup_episode(env._task_name)
 
                 if robot_obs is not None and scene_obs is not None:
-                    obs = env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
+                    obs = env.reset(robot_obs=_ep_robot_obs or robot_obs, scene_obs=_ep_scene_obs or scene_obs)
                     logger.info("Reset environment to reference trajectory starting state (steering active)")
                 else:
-                    obs = env.reset()
+                    obs = env.reset(robot_obs=_ep_robot_obs, scene_obs=_ep_scene_obs)
         elif use_reference_init:
             # Steering is NOT active, but user wants to use reference initial conditions
             # Load reference trajectory just for initial state
@@ -210,16 +237,16 @@ def main(cfg: DictConfig) -> None:
             traj_data = loader.load_trajectory_for_task(env._task_name)
 
             if traj_data is not None:
-                robot_obs = traj_data['robot_obs_init']
-                scene_obs = traj_data['scene_obs_init']
+                robot_obs = _ep_robot_obs if _ep_robot_obs is not None else traj_data['robot_obs_init']
+                scene_obs = _ep_scene_obs if _ep_scene_obs is not None else traj_data['scene_obs_init']
                 obs = env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
                 logger.info("Reset environment to reference trajectory starting state (no steering, for comparison)")
             else:
                 logger.warning(f"No reference trajectory found for task {env._task_name}, using default reset")
-                obs = env.reset()
+                obs = env.reset(robot_obs=_ep_robot_obs, scene_obs=_ep_scene_obs)
         else:
             # Normal reset with task-specific or random initial conditions
-            obs = env.reset()
+            obs = env.reset(robot_obs=_ep_robot_obs, scene_obs=_ep_scene_obs)
 
         # Define step callback for logging and steering step tracking
         def step_callback(timestep, obs, action, reward, done, info):
@@ -237,13 +264,20 @@ def main(cfg: DictConfig) -> None:
                     block_aabbs=state.get('block_aabbs'),
                 )
 
-            # Check stage transitions for multi-stage steering (proximity-based)
+            # Check stage transitions for multi-stage steering (proximity +
+            # grasp-completion gate; the gate only fires on grasp primitives).
             if steering is not None and hasattr(steering, 'check_stage_transition'):
-                steering.check_stage_transition(obs.ee_pose[:3])
+                steering.check_stage_transition(
+                    obs.ee_pose[:3], float(obs.ee_pose[6])
+                )
 
-            # Push latest costmap state to live Dash server (if enabled)
-            if steering is not None and hasattr(steering, 'update_dash'):
-                steering.update_dash(obs.ee_pose[:3])
+            # Push latest costmap state to the live tk window (if enabled)
+            if (viz_manager is not None and steering is not None
+                    and hasattr(steering, 'get_costmap_state')):
+                state = steering.get_costmap_state(obs.ee_pose[:3])
+                if state is not None:
+                    viz_manager.update_costmap(**state)
+                    viz_manager.tick_costmap()
 
             # Log step info
             logger.info(f"Step {timestep:3d} | Action: {action.trajectory[0][:3]} (pos) {action.trajectory[0][6]:.2f} (grip)")
@@ -262,13 +296,14 @@ def main(cfg: DictConfig) -> None:
             static_h = viz_manager.config.video.static_record_height
             gripper_w = viz_manager.config.video.gripper_record_width
             gripper_h = viz_manager.config.video.gripper_record_height
+            static_fov = getattr(viz_manager.config.video, 'static_camera_fov', None)
             use_hires_static = static_w > 0 and static_h > 0
             use_hires_gripper = gripper_w > 0 and gripper_h > 0
 
             def _waypoint_render(calvin_obs):
                 frames = {}
                 if use_hires_static:
-                    frames['static'] = env.render_high_res_static(static_w, static_h)
+                    frames['static'] = env.render_high_res_static(static_w, static_h, fov=static_fov)
                 else:
                     raw = calvin_obs.get('rgb_obs', {}).get('rgb_static')
                     if raw is not None:
@@ -285,7 +320,7 @@ def main(cfg: DictConfig) -> None:
             # Capture the initial env state before any actions
             initial_frames = {}
             if use_hires_static:
-                initial_frames['static'] = env.render_high_res_static(static_w, static_h)
+                initial_frames['static'] = env.render_high_res_static(static_w, static_h, fov=static_fov)
             elif obs.rgb.get('static') is not None:
                 initial_frames['static'] = obs.rgb.get('static')
             if use_hires_gripper:
@@ -341,6 +376,9 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"\n{'='*60}")
     logger.info(f"Final Results: {success_rate:.2%} ({success_count}/{num_episodes})")
     logger.info(f"{'='*60}")
+
+    if viz_manager is not None:
+        viz_manager.shutdown()
 
 
 if __name__ == "__main__":

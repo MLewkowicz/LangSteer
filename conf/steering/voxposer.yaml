@@ -5,7 +5,10 @@ name: voxposer
 instruction: null
 
 # Guidance parameters
-guidance_strength: 1.0
+guidance_strength: 1
+
+# .7 seems to be working for lift
+
 horizon: ${policy.pred_horizon}
 # Must be 'epsilon' for DiffuserActor (which uses epsilon prediction)
 prediction_type: epsilon
@@ -25,6 +28,60 @@ start_guidance_timestep: 50
 use_timestep_scaling: true
 min_timestep_scale: 0.1
 
+# Adaptive guidance decay — fades guidance as the EE enters the affordance
+# basin so the primitive-conditioned policy can drive through (e.g. complete
+# the push motion past the basin centroid). Both modes are opt-out; with both
+# disabled, behavior is identical to before.
+#
+# A. Distance-decay: linear ramp on ||ee - stage_target||.
+#    d ≥ distance_full → scale = 1.0 (full guidance, EE far)
+#    d ≤ distance_near → scale = distance_floor (EE in basin, near full release)
+use_distance_scaling: true
+distance_full: 0.12   # m: above this, full guidance
+distance_near: 0.04   # m: below this, guidance reduced to distance_floor
+distance_floor: 0.1  # residual fraction once EE is in basin
+#
+# B. Step-decay: linear ramp on env-steps spent in the current stage. Catches
+#    cases where the basin centroid is offset from the contact point and the
+#    EE never gets close enough to trigger distance decay.
+use_step_scaling: false
+step_full: 0          # full guidance for the first `step_full` env steps
+step_decay: 80        # ramp length (env steps) from 1.0 down to step_floor
+step_floor: 0.05
+
+# Rotation guidance — opt-in per stage. When a composer stage emits a 5-tuple
+# `(aff_fn, avoid_fn, rot_target, mode, primitive)` with rot_target != None,
+# the steering module nudges the predicted wrist rotation toward the target
+# via Tweedie's formula in 6D rotation space. All knobs below are no-ops on
+# stages without a rotation target, so existing rollouts behave identically.
+guidance_strength_rot: 0   # default to position strength
+start_guidance_timestep_rot: ${.start_guidance_timestep}
+# Alignment-decay: shrink rotation guidance as the predicted rotation aligns
+# with the target (measured by Frobenius distance ||R_pred − R_target||_F,
+# bounded ≤ 2*sqrt(2) ≈ 2.83). 0.5 ≈ 30°, 0.1 ≈ 6°.
+use_rot_alignment_scaling: false
+rot_align_full: 0.5
+rot_align_near: 0.1
+rot_align_floor: 0.05
+# Per-horizon SLERP fraction range for rotation guidance. The rotation pull
+# computes a per-horizon target as SLERP(R_pred_h, R_target, alpha_h) along
+# the SO(3) geodesic, with alpha_h ramping quadratically from
+# `rot_horizon_floor` (h=0) up to `rot_horizon_alpha_max` (h=H-1).
+#
+# `rot_horizon_alpha_max` is the most important knob — it controls how far
+# the predicted trajectory's endpoint reaches along the geodesic per
+# policy call:
+#   1.0 = "complete the full rotation in this trajectory" — but a 16-step
+#     waypoint sweep through 90° is much faster than the training
+#     distribution, so the IK can't track it smoothly (wrist pitches
+#     between waypoints).
+#   0.3 = "advance ~30% of the remaining rotation per trajectory" — closer
+#     to demo motion speed; convergence accumulates over many env steps.
+# The floor keeps a small pull on h=0 so the trajectory starts rotating
+# immediately rather than holding pose for one waypoint.
+rot_horizon_floor: 0.0
+rot_horizon_alpha_max: 0.3
+
 # DiffuserActor position normalization bounds (gripper_loc_bounds).
 # These are in gripper-relative space (same as policy.gripper_loc_bounds).
 # Required for correct world-space denormalization of predicted trajectories.
@@ -34,12 +91,55 @@ relative: ${policy.relative}
 # Multi-stage: proximity threshold (meters) for advancing to the next stage.
 # When the EE is within this distance of the current stage's affordance target,
 # the steering module switches to the next stage's cost map.
-stage_proximity_threshold: 0.05
+stage_proximity_threshold: 0.1
+
+# Grasp-completion gate. For stages with primitive='grasp', proximity alone is
+# not enough — the gripper must also have settled around an object before the
+# steering advances to the next stage (otherwise lift/place launches around an
+# empty gripper while the policy is still mid-attempt).
+#
+# A grasp counts as "complete" when the last `grasp_stability_window` gripper
+# widths all fall in (`grasp_min_width`, `grasp_max_width`) — lower bound
+# rejects "closed on nothing" (width≈0), upper bound rejects "still fully open
+# hovering near object" (Franka opens to ~0.08m) — and their spread is under
+# `grasp_stability_eps` (rejects "still closing" frames). Defaults tuned for
+# CALVIN's Franka gripper.
+grasp_min_width: 0.02         # m: below this → closed on nothing
+grasp_max_width: 0.07         # m: above this → gripper still open
+grasp_stability_window: 1     # consecutive steps the width must be stable
+grasp_stability_eps: 0.002    # m: max spread allowed across the window
+
+# Primitive-id conditioning is driven by the composer LLM: every stage tuple
+# the composer emits carries its own primitive name in the 4th slot, drawn
+# from the canonical vocabulary {grasp, push, pull, place}. The steering
+# module reads that name per stage and (if a callback is registered) calls
+# policy.set_primitive(id) so the base model swaps its conditioning embedding.
+# No static schema lookup is performed at inference.
 
 # Dynamic costmap refresh: re-evaluate value maps with current scene state.
 # Uses cached LLM code with updated object positions (no new LLM call).
+# Only stages marked 'track' are re-evaluated; 'static' stages are pinned at
+# activation regardless of refresh.
 refresh_costmap: true
 refresh_interval: 1  # refresh every N environment steps
+
+# Last-stage loop-back failure recovery. When the EE has dwelled in the last
+# stage's affordance basin for `last_stage_dwell_steps` consecutive env steps
+# without the env signalling success, restart from stage 0 (reusing the
+# composer's already-parsed stages — no new LLM call). Closes the gap with
+# language-conditioned policies, which retry implicitly via the language token
+# instead of locking onto a goal location they've already "reached".
+loop_back_on_last_stage: false   # opt-in; default keeps prior behavior
+last_stage_dwell_steps: 15       # ~1.5s at CALVIN's ~10 Hz env step rate
+last_stage_dwell_radius: ${.stage_proximity_threshold}
+max_loop_backs: 3                # safety cap so a stuck rollout still ends
+
+# Default stage mode for legacy 2-tuple LLM outputs (no 3rd element).
+# 'static' = freeze affordance at first activation (safe — never chases moving
+#   offsets like "15cm to the left of the slider handle").
+# 'track'  = re-evaluate each refresh (correct only for "at object" queries
+#   where the affordance should follow the moving object).
+default_stage_mode: static
 
 # Voxel map settings
 map_size: 100
@@ -57,15 +157,7 @@ workspace_bounds_min: [-0.35, -0.60, 0.30]
 workspace_bounds_max: [0.35, 0.15, 0.85]
 
 # 3D Visualization (static Plotly HTML, generated per stage activation)
+# For the live in-window 3D viewer, set `visualization.live_costmap=true`.
 visualize: true
 visualization_quality: low
 visualization_save_dir: null  # defaults to Hydra output dir
-
-# Live 3D Dash visualization server.
-# When enabled, starts a background Dash app at http://127.0.0.1:<port>
-# that re-renders the current ValueMap at a fixed interval. The browser
-# preserves camera rotation/zoom across updates (via Plotly uirevision),
-# so you can spin the view while data refreshes.
-costmap_dash: false
-costmap_dash_port: 8050
-costmap_dash_refresh_s: 0.5  # seconds between figure refreshes

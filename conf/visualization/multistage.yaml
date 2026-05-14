@@ -7,6 +7,7 @@ visualization:
   cameras: false
   trajectory_3d: false
   reference_plot: false
+  live_costmap: false
 
   camera:
     save_dir: "outputs/cameras"
@@ -46,3 +47,11 @@ visualization:
     static_record_height: 600
     gripper_record_width: 300
     gripper_record_height: 300
+    # Optional FOV override for static camera re-renders (degrees).
+    # null = use CALVIN's native 10°. Increase to ~20-30° to see full robot arm.
+    static_camera_fov: 20
+
+  live_costmap_cfg:
+    refresh_interval: 1
+    downsample: 4
+    point_threshold: 0.05

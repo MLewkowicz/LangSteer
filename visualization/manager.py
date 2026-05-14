@@ -11,6 +11,7 @@ from pathlib import Path
 from .config import VisualizationConfig
 from .renderers import (
     CameraRenderer,
+    LiveCostmapWindow,
     PyBulletRenderer,
     MatplotlibRenderer,
     PlotlyRenderer
@@ -53,6 +54,7 @@ class VisualizationManager:
         self.pybullet_renderer = None
         self.matplotlib_renderer = None
         self.plotly_renderer = None
+        self.live_costmap = None
 
         if config.cameras or config.video.enabled:
             logger.info("Initializing camera renderer")
@@ -69,6 +71,14 @@ class VisualizationManager:
         if config.trajectory_3d:
             logger.info("Initializing Plotly renderer")
             self.plotly_renderer = PlotlyRenderer(config.trajectory)
+
+        if config.live_costmap:
+            logger.info("Initializing live tk costmap window")
+            self.live_costmap = LiveCostmapWindow(
+                refresh_interval=config.live_costmap_cfg.refresh_interval,
+                downsample=config.live_costmap_cfg.downsample,
+                point_threshold=config.live_costmap_cfg.point_threshold,
+            )
 
     def visualize_episode(
         self,
@@ -202,6 +212,35 @@ class VisualizationManager:
         if self.config.video.enabled and self.camera_renderer:
             self.camera_renderer.stop_video()
 
+    def update_costmap(self, value_map, ee_pos, target, objects,
+                       step, stage_idx, num_stages, instruction='',
+                       primitive=None, target_rotation=None):
+        """Push the latest VoxPoser costmap state to the live tk window.
+
+        `target_rotation` is accepted from the steering snapshot but not yet
+        rendered — rotation has no clean 3D analogue in the current costmap
+        viewer. The target rotation is logged when a stage activates instead.
+        """
+        if self.live_costmap is None:
+            return
+        self.live_costmap.update_state(
+            value_map=value_map, ee_pos=ee_pos, target=target,
+            objects=objects, step=step, stage_idx=stage_idx,
+            num_stages=num_stages, instruction=instruction,
+            primitive=primitive,
+        )
+
+    def tick_costmap(self):
+        """Pump the live tk costmap window's event loop and redraw."""
+        if self.live_costmap is None:
+            return
+        self.live_costmap.tick()
+
+    def shutdown(self):
+        """Tear down any background renderers (call at end of run)."""
+        if self.live_costmap is not None:
+            self.live_costmap.close()
+
     def reset(self):
         """Reset all renderers for new episode."""
         if self.camera_renderer:
@@ -224,6 +263,8 @@ class VisualizationManager:
             enabled_modes.append("reference_plot")
         if self.config.video.enabled:
             enabled_modes.append("video")
+        if self.config.live_costmap:
+            enabled_modes.append("live_costmap")
 
         if not enabled_modes:
             return "VisualizationManager(no modes enabled)"

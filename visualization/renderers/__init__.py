@@ -1,13 +1,15 @@
 """Visualization renderers for different output modes."""
 
 from .camera_renderer import CameraRenderer
-from .pybullet_renderer import PyBulletRenderer
+from .costmap_tk import LiveCostmapWindow
 from .matplotlib_renderer import MatplotlibRenderer
 from .plotly_renderer import PlotlyRenderer
+from .pybullet_renderer import PyBulletRenderer
 
 __all__ = [
     'CameraRenderer',
-    'PyBulletRenderer',
+    'LiveCostmapWindow',
     'MatplotlibRenderer',
     'PlotlyRenderer',
+    'PyBulletRenderer',
 ]

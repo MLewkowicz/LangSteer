@@ -56,7 +56,7 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["core*", "envs*", "policies*", "steering*", "training*", "forecasters*", "utils*", "visualization*"]
+include = ["core*", "envs*", "policies*", "steering*", "training*", "forecasters*", "utils*", "visualization*", "voxposer*"]
 exclude = ["calvin*", "3D-Diffusion-Policy*", "3d_diffuser_actor*", "conf*"]
 
 [tool.uv.sources]

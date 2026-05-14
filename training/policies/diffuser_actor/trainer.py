@@ -95,10 +95,15 @@ class DiffuserActorTrainingWorkspace:
         self.best_loss = None
         self.use_instruction = cfg.policy.get("use_instruction", True)
         self.use_primitive_id = cfg.policy.get("use_primitive_id", False)
+        self.use_object_id = cfg.policy.get("use_object_id", False)
         if self.use_primitive_id and not self.use_instruction:
             raise ValueError(
                 "use_primitive_id=True requires use_instruction=True "
                 "(primitive mode reuses the instruction cross-attention pipeline)."
+            )
+        if self.use_object_id and not self.use_primitive_id:
+            raise ValueError(
+                "use_object_id=True requires use_primitive_id=True."
             )
 
         # Logging
@@ -190,6 +195,8 @@ class DiffuserActorTrainingWorkspace:
             lang_enhanced=policy_cfg.get("lang_enhanced", True),
             use_primitive_id=policy_cfg.get("use_primitive_id", False),
             num_primitives=policy_cfg.get("num_primitives", 4),
+            use_object_id=policy_cfg.get("use_object_id", False),
+            num_objects=policy_cfg.get("num_objects", 8),
         )
 
         if self.is_main_process:
@@ -260,11 +267,20 @@ class DiffuserActorTrainingWorkspace:
         # names like "grasp"/"push"/"pull"/"place" after preprocessing).
         train_primitive_ids = None
         val_primitive_ids = None
+        train_object_ids = None
+        val_object_ids = None
         if self.use_primitive_id:
             train_primitive_ids = self._load_primitive_ids(
                 dataset_cfg.get("primitive_ann_path_train"), self.cfg.policy
             )
             val_primitive_ids = self._load_primitive_ids(
+                dataset_cfg.get("primitive_ann_path_val"), self.cfg.policy
+            )
+        if self.use_object_id:
+            train_object_ids = self._load_object_ids(
+                dataset_cfg.get("primitive_ann_path_train"), self.cfg.policy
+            )
+            val_object_ids = self._load_object_ids(
                 dataset_cfg.get("primitive_ann_path_val"), self.cfg.policy
             )
 
@@ -283,6 +299,7 @@ class DiffuserActorTrainingWorkspace:
             root=dataset_cfg.train_path,
             instructions=train_instructions,
             primitive_ids=train_primitive_ids,
+            object_ids=train_object_ids,
             taskvar=taskvar,
             max_episode_length=dataset_cfg.get("max_episode_length", 5),
             cache_size=dataset_cfg.get("cache_size", 100),
@@ -300,6 +317,7 @@ class DiffuserActorTrainingWorkspace:
             root=dataset_cfg.val_path,
             instructions=val_instructions,
             primitive_ids=val_primitive_ids,
+            object_ids=val_object_ids,
             taskvar=taskvar,
             max_episode_length=dataset_cfg.get("max_episode_length", 5),
             cache_size=dataset_cfg.get("cache_size_val", 100),
@@ -317,42 +335,105 @@ class DiffuserActorTrainingWorkspace:
     def _build_instruction(self, sample):
         """Return the conditioning tensor matching the active mode.
 
-        - primitive-id mode: long tensor of shape (B, 1) with ids in [0, K)
-        - CLIP mode:         float tensor of shape (B, 53, 512) CLIP features
-        - no-language mode:  None
+        - primitive-only mode:    long tensor (B, 1) with primitive ids
+        - primitive+object mode:  long tensor (B, 2) — col 0 primitive, col 1 object
+        - CLIP mode:              float tensor (B, 53, 512) CLIP features
+        - no-language mode:       None
         """
         if self.use_primitive_id:
-            return sample["primitive_id"].to(self.device).long()
+            primitive = sample["primitive_id"].to(self.device).long()
+            if self.use_object_id:
+                object_ = sample["object_id"].to(self.device).long()
+                return torch.cat([primitive, object_], dim=-1)  # (B, 2)
+            return primitive  # (B, 1)
         if self.use_instruction:
             return sample["instr"].to(self.device)
         return None
 
+    # Master vocabularies. Sizes are decoupled from the model's num_primitives /
+    # num_objects: a config with num_primitives=4 and old data (no `rotate`) is
+    # legal; a config with num_primitives<5 and a rotate-bearing ann file fails
+    # fast with a clear "out of range" error.
+    # Primitive ids: insertion order from action_primitive_object_annotations.json.
+    PRIMITIVE_VOCAB = {"grasp": 0, "push": 1, "pull": 2, "place": 3, "rotate": 4}
+    # Object ids: ALPHABETICAL ORDER. This is what was used to train the
+    # primitive_object_ABCD checkpoint — do not reorder without retraining.
+    OBJECT_VOCAB = {
+        "block": 0,
+        "blue_block": 1,
+        "drawer_handle": 2,
+        "led_button": 3,
+        "lightbulb_switch": 4,
+        "pink_block": 5,
+        "red_block": 6,
+        "slider_handle": 7,
+    }
+
     @staticmethod
     def _load_primitive_ids(ann_path, policy_cfg):
-        """Load a primitive_lang_ann.npy and map its `task` primitives -> int ids.
+        """Load a primitive_lang_ann.npy and map its primitive labels -> int ids.
 
-        Returns a 1D numpy int array of length N (number of annotations),
-        indexed by `annotation_id` (what `episode[6][0]` carries).
+        Reads `info.primitive` if present (new schema), falling back to
+        `language.task` for backward compatibility with the old primitive-only
+        ann files that stored the bare primitive name in `task`.
+
+        Returns a 1D numpy int array of length N indexed by annotation_id.
         """
         if ann_path is None:
             raise ValueError(
                 "use_primitive_id=True but dataset.primitive_ann_path_{train,val} "
-                "is not set. Point to the primitive_lang_ann.npy produced by "
-                "scripts/preprocess_primitive_annotations.py."
+                "is not set. Point to the primitive(_object)_lang_ann.npy produced "
+                "by scripts/preprocess_primitive*_annotations.py."
             )
         ann = np.load(ann_path, allow_pickle=True).item()
-        tasks = list(ann["language"]["task"])
-        # Fixed vocabulary for LangSteer's 4-primitive scheme.
-        vocab = {"grasp": 0, "push": 1, "pull": 2, "place": 3}
+        info = ann.get("info", {})
+        if "primitive" in info:
+            tasks = list(info["primitive"])
+        else:
+            tasks = list(ann["language"]["task"])
+        vocab = DiffuserActorTrainingWorkspace.PRIMITIVE_VOCAB
         num_primitives = policy_cfg.get("num_primitives", 4)
-        if len(vocab) != num_primitives:
-            raise ValueError(
-                f"num_primitives={num_primitives} but vocabulary has {len(vocab)}. "
-                "Adjust both if extending the primitive set."
-            )
         ids = np.array([vocab[str(t)] for t in tasks], dtype=np.int64)
+        max_id = int(ids.max()) if len(ids) else -1
+        if max_id >= num_primitives:
+            offending = sorted({k for k, v in vocab.items() if v >= num_primitives and v in ids})
+            raise ValueError(
+                f"primitive_ann at {ann_path} contains ids up to {max_id} "
+                f"(e.g. {offending}) but num_primitives={num_primitives}. "
+                "Bump num_primitives or use an ann file without these primitives."
+            )
         logger.info(f"Loaded {len(ids)} primitive ids from {ann_path}: "
-                    f"{dict((k, int((ids == v).sum())) for k, v in vocab.items())}")
+                    f"{dict((k, int((ids == v).sum())) for k, v in vocab.items() if v < num_primitives)}")
+        return ids
+
+    @staticmethod
+    def _load_object_ids(ann_path, policy_cfg):
+        """Load an ann file's `info.object` field and map to int ids."""
+        if ann_path is None:
+            raise ValueError(
+                "use_object_id=True but dataset.primitive_ann_path_{train,val} "
+                "is not set. Point to the primitive_object_lang_ann.npy produced "
+                "by scripts/preprocess_primitive_object_annotations.py."
+            )
+        ann = np.load(ann_path, allow_pickle=True).item()
+        info = ann.get("info", {})
+        if "object" not in info:
+            raise ValueError(
+                f"use_object_id=True but ann file {ann_path} has no `info.object` "
+                "field. Regenerate with preprocess_primitive_object_annotations.py."
+            )
+        objects = list(info["object"])
+        vocab = DiffuserActorTrainingWorkspace.OBJECT_VOCAB
+        num_objects = policy_cfg.get("num_objects", 8)
+        ids = np.array([vocab[str(o)] for o in objects], dtype=np.int64)
+        max_id = int(ids.max()) if len(ids) else -1
+        if max_id >= num_objects:
+            raise ValueError(
+                f"object_ann at {ann_path} contains ids up to {max_id} but "
+                f"num_objects={num_objects}. Bump num_objects."
+            )
+        logger.info(f"Loaded {len(ids)} object ids from {ann_path}: "
+                    f"{dict((k, int((ids == v).sum())) for k, v in vocab.items() if v < num_objects)}")
         return ids
 
     @staticmethod

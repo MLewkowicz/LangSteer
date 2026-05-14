@@ -35,44 +35,51 @@ TABLE_ALIAS = [
     'workspace', 'work_space', 'work space',
 ]
 
-# CALVIN fixed fixture positions from PyBullet per-link AABBs on playtable_8 (UID=5).
-# These objects don't move between episodes.
-# Link mapping: 0=button, 1=switch, 2=slide, 3=drawer, 4=led, 5=light
+# CALVIN fixed fixture positions.
+# Fallback only — when live PyBullet data isn't available, `_detect_fixture`
+# reads from here and assumes identity rotation. With live data, the
+# authoritative values (and orientations) come from
+# CalvinEnvironment._get_fixture_positions().
+#
+# Values mirror envs/calvin.py's _FIXTURE_AABB_OVERRIDES + _DERIVED_OFFSETS
+# (the handle/light_switch positions are pre-composed here since this dict
+# doesn't carry rotation).
+# Link mapping (playtable UID=5): 0=button, 1=switch, 2=slide, 3=drawer, 4=led, 5=light
 CALVIN_FIXTURES = {
     'slider': {
-        # slide_link (Link 2) — full slider door
-        'position': np.array([0.040, 0.040, 0.555]),
-        'size': np.array([0.289, 0.10, 0.04]),
+        # slide_link (Link 2) — full slider door (tilted -30.5° around X)
+        'position': np.array([0.040, 0.065, 0.538]),
+        'size': np.array([0.280, 0.018, 0.218]),
     },
     'slider_handle': {
-        # Small vertical grasp groove at the slider door's front face
-        'position': np.array([0.040, -0.010, 0.555]),
-        'size': np.array([0.03, 0.04, 0.11]),
+        # Small grasp groove on the slider door's front face (parent-local offset [0, -0.038, 0.002])
+        'position': np.array([0.040, 0.027, 0.540]),
+        'size': np.array([0.034, 0.066, 0.161]),
     },
     'drawer': {
         # drawer_link (Link 3)
-        'position': np.array([0.180, -0.100, 0.350]),
-        'size': np.array([0.15, 0.25, 0.08]),
+        'position': np.array([0.178, -0.008, 0.354]),
+        'size': np.array([0.445, 0.345, 0.102]),
     },
     'drawer_handle': {
         # Horizontal pull bar flush with the drawer's front face
-        'position': np.array([0.180, -0.245, 0.350]),
-        'size': np.array([0.11, 0.04, 0.03]),
+        'position': np.array([0.180, -0.220, 0.360]),
+        'size': np.array([0.242, 0.077, 0.036]),
     },
     'lightbulb': {
         # light_link (Link 5)
         'position': np.array([0.300, 0.160, 0.673]),
         'size': np.array([0.062, 0.062, 0.056]),
     },
-    'light_switch': {
-        # switch_link (Link 1) — controls the lightbulb
-        'position': np.array([0.300, 0.037, 0.518]),
+    'switch': {
+        # switch_link (Link 1) — housing cube for the light switch mechanism.
+        'position': np.array([0.296, 0.039, 0.499]),
         'size': np.array([0.06, 0.06, 0.06]),
     },
-    'switch': {
-        # Alias for light_switch
-        'position': np.array([0.300, 0.037, 0.518]),
-        'size': np.array([0.06, 0.06, 0.06]),
+    'light_switch': {
+        # Same link 1 as 'switch', but describes the tilted toggle lever (rotated -31.5° around X).
+        'position': np.array([0.302, 0.037, 0.518]),
+        'size': np.array([0.118, 0.061, 0.031]),
     },
     'led': {
         # led_link (Link 4)
@@ -119,6 +126,21 @@ def voxel2pc(voxels, bounds_min, bounds_max, map_size):
     bounds_max = np.asarray(bounds_max, dtype=np.float32)
     pc = voxels / (map_size - 1) * (bounds_max - bounds_min) + bounds_min
     return pc
+
+
+# 8 unit-cube corners (each coord in {-0.5, +0.5}), used to envelope an OBB.
+_UNIT_CUBE_CORNERS = np.array([
+    [-0.5, -0.5, -0.5], [+0.5, -0.5, -0.5],
+    [-0.5, +0.5, -0.5], [+0.5, +0.5, -0.5],
+    [-0.5, -0.5, +0.5], [+0.5, -0.5, +0.5],
+    [-0.5, +0.5, +0.5], [+0.5, +0.5, +0.5],
+], dtype=np.float32)
+
+
+def obb_world_corners(center: np.ndarray, size: np.ndarray, rotation: np.ndarray) -> np.ndarray:
+    """8 world-frame corners of an OBB. `rotation` is world-frame (3, 3)."""
+    local = _UNIT_CUBE_CORNERS * np.asarray(size, dtype=np.float32)   # (8, 3)
+    return (np.asarray(rotation, dtype=np.float32) @ local.T).T + np.asarray(center, dtype=np.float32)
 
 
 def pc2voxel_map(points, bounds_min, bounds_max, map_size):
@@ -263,6 +285,71 @@ class CalvinLMPInterface:
             voxel_map[min_x:max_x, min_y:max_y, min_z:max_z] = value
         return voxel_map
 
+    def set_voxel_by_box(self, voxel_map, obj, value=1, pad_cm=0.0):
+        """Fill the voxels inside an object's OBB with `value`.
+
+        Uses the tight oriented box (`obb_center_world`, `obb_size`,
+        `obb_rotation`) from the Observation, so tilted fixtures and rotated
+        blocks get a snug fill instead of the inflated world-AABB slab that
+        `obj.aabb[0]:obj.aabb[1]` slicing would produce.
+
+        Iterates only the voxels in the world-AABB that encloses the rotated
+        box, so cost is O(enclosing volume) regardless of box tilt.
+
+        Args:
+            voxel_map: (N, N, N) array or VoxelIndexingWrapper to write into.
+            obj: Observation with `obb_center_world`, `obb_size`, `obb_rotation`.
+                Falls back to obj.aabb for objects without OBB fields (table, ee).
+            value: Value to write (default 1).
+            pad_cm: Isotropic expansion of the OBB in cm before rasterizing.
+        """
+        if isinstance(voxel_map, VoxelIndexingWrapper):
+            target = voxel_map.array
+        else:
+            target = voxel_map
+
+        center_w = obj.get('obb_center_world') if isinstance(obj, dict) else None
+        if center_w is None:
+            # No OBB info (e.g. table/ee): fall back to axis-aligned fill.
+            aabb = np.asarray(obj['aabb'], dtype=np.int32)
+            lo = np.clip(aabb[0], 0, self._map_size - 1)
+            hi = np.clip(aabb[1] + 1, 0, self._map_size)
+            target[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]] = value
+            return voxel_map
+
+        center_w = np.asarray(center_w, dtype=np.float32)
+        size = np.asarray(obj['obb_size'], dtype=np.float32) + 2.0 * (pad_cm / 100.0)
+        R = np.asarray(obj['obb_rotation'], dtype=np.float32)
+        half = size / 2.0
+
+        # Enclosing world AABB of the padded OBB, in voxel indices.
+        corners_world = obb_world_corners(center_w, size, R)
+        vox_min = pc2voxel(corners_world.min(axis=0), self._workspace_min,
+                           self._workspace_max, self._map_size)
+        vox_max = pc2voxel(corners_world.max(axis=0), self._workspace_min,
+                           self._workspace_max, self._map_size)
+        lo = np.clip(np.minimum(vox_min, vox_max), 0, self._map_size - 1)
+        hi = np.clip(np.maximum(vox_min, vox_max) + 1, 0, self._map_size)
+        if np.any(hi <= lo):
+            return voxel_map
+
+        # Voxel centers in world coords, vectorized over the enclosing slab.
+        ix = np.arange(lo[0], hi[0], dtype=np.float32)
+        iy = np.arange(lo[1], hi[1], dtype=np.float32)
+        iz = np.arange(lo[2], hi[2], dtype=np.float32)
+        gx, gy, gz = np.meshgrid(ix, iy, iz, indexing='ij')
+        grid = np.stack([gx, gy, gz], axis=-1)    # (nx, ny, nz, 3)
+
+        span = self._workspace_max - self._workspace_min
+        world_pts = grid / (self._map_size - 1) * span + self._workspace_min
+
+        # Transform into OBB local frame. R^T @ (v - c)  ==  (v - c) @ R.
+        local = (world_pts - center_w) @ R
+        inside = np.all(np.abs(local) <= half, axis=-1)
+
+        target[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]][inside] = value
+        return voxel_map
+
     def get_empty_affordance_map(self):
         """Return an empty affordance map (zeros)."""
         return self._get_default_voxel_map('target')
@@ -270,6 +357,91 @@ class CalvinLMPInterface:
     def get_empty_avoidance_map(self):
         """Return an empty avoidance map (zeros)."""
         return self._get_default_voxel_map('obstacle')
+
+    # ==========================================================
+    # Rotation helpers (for the optional rotation-target slot in
+    # composer stage tuples). All return world-frame 3x3 matrices
+    # so callers can compose them freely; the steering module
+    # converts to its internal 6D representation.
+    # ==========================================================
+
+    def rotation_about_axis(self, axis, angle_deg: float) -> np.ndarray:
+        """Build a 3x3 rotation matrix about a principal axis or arbitrary vector.
+
+        Args:
+            axis: 'x' / 'y' / 'z' or a 3-vector (will be normalized).
+            angle_deg: rotation angle in degrees, right-hand rule.
+        """
+        if isinstance(axis, str):
+            key = axis.lower()
+            if key == 'x':
+                u = np.array([1.0, 0.0, 0.0])
+            elif key == 'y':
+                u = np.array([0.0, 1.0, 0.0])
+            elif key == 'z':
+                u = np.array([0.0, 0.0, 1.0])
+            else:
+                raise ValueError(f"axis must be 'x', 'y', 'z', or a 3-vector; got {axis!r}")
+        else:
+            u = np.asarray(axis, dtype=np.float64)
+            if u.shape != (3,):
+                raise ValueError(f"axis vector must be shape (3,); got {u.shape}")
+            u = normalize_vector(u)
+
+        theta = np.deg2rad(float(angle_deg))
+        c, s = np.cos(theta), np.sin(theta)
+        ux, uy, uz = u
+        # Rodrigues' rotation formula
+        return np.array([
+            [c + ux * ux * (1 - c), ux * uy * (1 - c) - uz * s, ux * uz * (1 - c) + uy * s],
+            [uy * ux * (1 - c) + uz * s, c + uy * uy * (1 - c), uy * uz * (1 - c) - ux * s],
+            [uz * ux * (1 - c) - uy * s, uz * uy * (1 - c) + ux * s, c + uz * uz * (1 - c)],
+        ], dtype=np.float64)
+
+    def quaternion_from_axis_angle(self, axis, angle_deg: float) -> np.ndarray:
+        """Build a wxyz quaternion from an axis + angle. Returns shape (4,)."""
+        if isinstance(axis, str):
+            key = axis.lower()
+            u = {'x': np.array([1.0, 0, 0]),
+                 'y': np.array([0, 1.0, 0]),
+                 'z': np.array([0, 0, 1.0])}[key]
+        else:
+            u = normalize_vector(np.asarray(axis, dtype=np.float64))
+        half = np.deg2rad(float(angle_deg)) * 0.5
+        s = np.sin(half)
+        return np.array([np.cos(half), s * u[0], s * u[1], s * u[2]], dtype=np.float64)
+
+    def compose_rotation(self, *rotations) -> np.ndarray:
+        """Left-to-right matrix product: compose_rotation(R1, R2, R3) = R1 @ R2 @ R3."""
+        if not rotations:
+            return np.eye(3)
+        out = np.asarray(rotations[0], dtype=np.float64)
+        for r in rotations[1:]:
+            out = out @ np.asarray(r, dtype=np.float64)
+        return out
+
+    def current_ee_rotation(self) -> np.ndarray:
+        """Return the current end-effector orientation as a 3x3 matrix.
+
+        CALVIN's robot_obs encodes orientation as Euler XYZ at indices [3:6],
+        following pytorch3d's "XYZ" intrinsic convention used by Diffuser
+        Actor's `convert_rotation` — i.e. the matrix is built as
+        Rx(rx) @ Ry(ry) @ Rz(rz). Using a different order here would yield a
+        different world-frame rotation and silently swap axes downstream.
+
+        Use as a base for relative targets, e.g. compose_rotation(
+        current_ee_rotation(), rotation_about_axis('z', 90)).
+        """
+        if self._robot_obs is None:
+            return np.eye(3)
+        rx, ry, rz = self._robot_obs[3:6]
+        cx, sx = np.cos(rx), np.sin(rx)
+        cy, sy = np.cos(ry), np.sin(ry)
+        cz, sz = np.cos(rz), np.sin(rz)
+        Rx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
+        Ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
+        Rz = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
+        return Rx @ Ry @ Rz
 
     # ==========================================================
     # Internal helpers
@@ -346,12 +518,17 @@ class CalvinLMPInterface:
         })
 
     def _detect_block(self, obj_name: str, obs_slice: slice) -> Observation:
-        """Detect a block, preferring live PyBullet AABB over scene_obs fallback.
+        """Detect a block, preferring live PyBullet OBB over scene_obs fallback.
 
-        Live AABB from _block_aabbs is orientation-aware (reflects how the block
-        is currently rotated). scene_obs fallback uses only the position and a
-        hardcoded BLOCK_SIZE cube, so it's less accurate — especially for the
-        pink block, which is actually 7×5×5cm.
+        The live OBB from _block_aabbs is orientation-aware; scene_obs fallback
+        assumes identity rotation and a hardcoded BLOCK_SIZE cube (worse for
+        the pink block, which is actually 7×5×5cm).
+
+        `aabb` on the returned Observation is the *world-axis envelope* of the
+        rotated box (the tight world-AABB of the 8 OBB corners). This keeps
+        directional reasoning like "max_z of the block" correct under tilt.
+        OBB fields (`obb_center_world`, `obb_size`, `obb_rotation`) are also
+        attached for tight rasterization via `set_voxel_by_box`.
         """
         canonical = obj_name.lower().replace(' ', '_')
         key = next(
@@ -361,12 +538,21 @@ class CalvinLMPInterface:
 
         if self._block_aabbs and key in self._block_aabbs:
             live = self._block_aabbs[key]
-            aabb_min_world = np.asarray(live['aabb_min'], dtype=np.float32)
-            aabb_max_world = np.asarray(live['aabb_max'], dtype=np.float32)
             pos_world = np.asarray(live['position'], dtype=np.float32)
+            size = np.asarray(live.get('size', BLOCK_SIZE), dtype=np.float32)
+            rotation = np.asarray(live.get('rotation', np.eye(3)), dtype=np.float32)
+            if 'aabb_min' in live and 'aabb_max' in live:
+                aabb_min_world = np.asarray(live['aabb_min'], dtype=np.float32)
+                aabb_max_world = np.asarray(live['aabb_max'], dtype=np.float32)
+            else:
+                corners = obb_world_corners(pos_world, size, rotation)
+                aabb_min_world = corners.min(axis=0)
+                aabb_max_world = corners.max(axis=0)
         elif self._scene_obs is not None:
             pos_world = self._scene_obs[obs_slice].copy()
-            half_size = BLOCK_SIZE / 2
+            size = BLOCK_SIZE.astype(np.float32)
+            rotation = np.eye(3, dtype=np.float32)
+            half_size = size / 2
             aabb_min_world = pos_world - half_size
             aabb_max_world = pos_world + half_size
         else:
@@ -387,28 +573,33 @@ class CalvinLMPInterface:
                 self._world_to_voxel(aabb_max_world),
             ]),
             '_position_world': pos_world,
+            'obb_center_world': pos_world,
+            'obb_size': size,
+            'obb_rotation': rotation,
         })
 
     def _detect_fixture(self, obj_name: str, fixture_name: str,
                         fixture_info: dict) -> Observation:
         """Detect a fixture, preferring live PyBullet positions over hardcoded.
 
-        Args:
-            obj_name: Original query name (for the Observation)
-            fixture_name: Canonical name matching CALVIN_FIXTURES / _fixture_positions keys
-            fixture_info: Hardcoded fallback from CALVIN_FIXTURES
+        `aabb` is the world-axis envelope of the rotated OBB (tight bounding
+        box of the 8 rotated corners). OBB fields are also attached for tight
+        rasterization via `set_voxel_by_box`.
         """
         # Use live position from PyBullet if available
         if self._fixture_positions and fixture_name in self._fixture_positions:
             live = self._fixture_positions[fixture_name]
             pos_world = np.asarray(live['position'], dtype=np.float32).copy()
-            half_size = np.asarray(live['size'], dtype=np.float32) / 2
+            size = np.asarray(live['size'], dtype=np.float32)
+            rotation = np.asarray(live.get('rotation', np.eye(3)), dtype=np.float32)
         else:
             pos_world = fixture_info['position'].copy()
-            half_size = fixture_info['size'] / 2
+            size = fixture_info['size'].astype(np.float32)
+            rotation = np.eye(3, dtype=np.float32)
 
-        aabb_min_world = pos_world - half_size
-        aabb_max_world = pos_world + half_size
+        corners_world = obb_world_corners(pos_world, size, rotation)
+        aabb_min_world = corners_world.min(axis=0)
+        aabb_max_world = corners_world.max(axis=0)
 
         return Observation({
             'name': obj_name,
@@ -418,6 +609,9 @@ class CalvinLMPInterface:
                 self._world_to_voxel(aabb_max_world),
             ]),
             '_position_world': pos_world,
+            'obb_center_world': pos_world,
+            'obb_size': size,
+            'obb_rotation': rotation,
         })
 
     def _get_default_voxel_map(self, map_type: str):

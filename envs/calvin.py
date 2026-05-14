@@ -314,7 +314,7 @@ class CalvinEnvironment(BaseEnvironment):
         )
         return np.array(rgba, dtype=np.uint8)[:, :, :3]
 
-    def render_high_res_static(self, width: int, height: int) -> np.ndarray:
+    def render_high_res_static(self, width: int, height: int, fov: float | None = None) -> np.ndarray:
         """
         Render the static overhead camera at an arbitrary resolution using PyBullet directly.
 
@@ -323,14 +323,16 @@ class CalvinEnvironment(BaseEnvironment):
         Args:
             width: Desired output width in pixels.
             height: Desired output height in pixels.
+            fov: Optional field of view override in degrees. If None, uses the camera's native FOV.
 
         Returns:
             (height, width, 3) uint8 RGB array.
         """
         import pybullet as p
         cam = self._gym_env._env.cameras[0]
+        effective_fov = fov if fov is not None else cam.fov
         proj_matrix = p.computeProjectionMatrixFOV(
-            cam.fov, width / height, cam.nearval, cam.farval,
+            effective_fov, width / height, cam.nearval, cam.farval,
             physicsClientId=cam.cid
         )
         _, _, rgba, _, _ = p.getCameraImage(
@@ -343,61 +345,84 @@ class CalvinEnvironment(BaseEnvironment):
     # Scene state (for VoxPoser steering)
     # ------------------------------------------------------------------
 
-    # Playtable link indices → fixture names (CALVIN playtable UID=5)
+    # Playtable link indices → default canonical fixture name (CALVIN playtable UID=5).
+    # Used only as a fallback for links without any entry in _FIXTURE_AABB_OVERRIDES
+    # (led, lightbulb), which fall back to live PyBullet per-link AABBs.
     _PLAYTABLE_UID = 5
     _LINK_FIXTURES = {
         0: 'button',
-        1: 'switch',       # also 'light_switch'
+        1: 'switch',
         2: 'slider',
         3: 'drawer',
         4: 'led',
         5: 'lightbulb',
     }
-    # Hardcoded size overrides with articulation tracking. PyBullet's link AABB
-    # for `slide_link`, `drawer_link`, and similar includes the entire cabinet
-    # mesh (frames, runners, interior walls) not just the visible interactive
-    # surface, producing bboxes far too large. For these links we use a
-    # hand-tuned size AND track position via (live link frame origin) + (const
-    # offset). The offset is computed once by briefly resetting the joint to 0
-    # to capture the link frame origin at rest (see _compute_fixture_frame_offsets).
-    # Because all playtable joints are prismatic, the offset is a world-frame
-    # constant that's added to worldLinkFramePosition at query time.
+    # Hand-tuned OBB overrides with articulation tracking. PyBullet's per-link
+    # AABB for `slide_link`, `drawer_link`, etc. includes the entire cabinet
+    # mesh (frames, runners, interior walls), not just the interactive surface
+    # — we override those with tight boxes. Position is tracked via (live link
+    # frame origin) + (const offset); the offset is calibrated once by briefly
+    # resetting the joint to 0 (see _compute_fixture_frame_offsets). All
+    # playtable joints are prismatic, so the offset is a world-frame constant.
+    #
+    # `link_idx` is the playtable link this override tracks. Multiple overrides
+    # CAN share a link (e.g. switch housing + light_switch lever both on link 1).
+    # `euler_xyz_deg` is the OBB's world-frame rotation (XYZ intrinsic, degrees);
+    # [0,0,0] reproduces the pre-rotation AABB behavior exactly.
+    #
+    # Values from the 2026-04-23 annotator pass (tmp/bbox_annotator/overrides_20260423_164037.json).
     _FIXTURE_AABB_OVERRIDES = {
         'slider': {
-            'rest_position': np.array([0.040, 0.040, 0.555]),
-            'size':          np.array([0.289, 0.10, 0.04]),
+            'link_idx': 2,
+            'rest_position': np.array([0.040, 0.065, 0.538]),
+            'size':          np.array([0.280, 0.018, 0.218]),
+            'euler_xyz_deg': np.array([-30.50, 0.0, 0.0]),
         },
         'drawer': {
-            'rest_position': np.array([0.180, -0.100, 0.350]),
-            'size':          np.array([0.15, 0.25, 0.08]),
+            'link_idx': 3,
+            'rest_position': np.array([0.178, -0.008, 0.354]),
+            'size':          np.array([0.445, 0.345, 0.102]),
+            'euler_xyz_deg': np.array([0.0, 0.0, 0.0]),
         },
         'switch': {
-            'rest_position': np.array([0.300, 0.037, 0.518]),
+            'link_idx': 1,
+            'rest_position': np.array([0.296, 0.039, 0.499]),
             'size':          np.array([0.06, 0.06, 0.06]),
+            'euler_xyz_deg': np.array([0.0, 0.0, 0.0]),
         },
         'button': {
+            'link_idx': 0,
             'rest_position': np.array([-0.120, -0.120, 0.472]),
             'size':          np.array([0.07, 0.07, 0.03]),
+            'euler_xyz_deg': np.array([0.0, 0.0, 0.0]),
+        },
+        # light_switch shares playtable link 1 with 'switch' but describes the
+        # tilted toggle lever rather than the housing — distinct geometry, so
+        # it's a sibling top-level fixture, not a derived offset.
+        'light_switch': {
+            'link_idx': 1,
+            'rest_position': np.array([0.302, 0.037, 0.518]),
+            'size':          np.array([0.118, 0.061, 0.031]),
+            'euler_xyz_deg': np.array([-31.50, 0.0, 0.0]),
         },
     }
-    # Derived fixtures: small grasp regions or aliases computed from a parent link.
-    # Each entry is {parent: link name, offset: (3,) from parent center, size: (3,) box
-    # extent — or None to inherit parent size}.
+    # Derived fixtures: small grasp regions computed from a parent link.
+    # `offset` and `euler_xyz_deg` are in the parent's local frame, so a handle
+    # follows its parent's rotation:
+    #     world_center   = parent_center + R_parent @ offset
+    #     world_rotation = R_parent @ R_local
     _DERIVED_OFFSETS = {
         'drawer_handle': {
             'parent': 'drawer',
-            'offset': np.array([0.0, -0.145, 0.0]),    # flush with drawer front face
-            'size':   np.array([0.11, 0.04, 0.03]),    # horizontal pull bar
+            'offset':        np.array([0.002, -0.212, 0.006]),
+            'size':          np.array([0.242, 0.077, 0.036]),
+            'euler_xyz_deg': np.array([0.0, 0.0, 0.0]),
         },
         'slider_handle': {
             'parent': 'slider',
-            'offset': np.array([0.0, -0.05, 0.0]),
-            'size':   np.array([0.03, 0.04, 0.11]),   # vertical groove
-        },
-        'light_switch': {
-            'parent': 'switch',
-            'offset': np.array([0.0, 0.0, 0.0]),
-            'size':   None,
+            'offset':        np.array([0.0, -0.038, 0.002]),
+            'size':          np.array([0.034, 0.066, 0.161]),
+            'euler_xyz_deg': np.array([0.0, 0.0, 0.0]),
         },
     }
 
@@ -424,9 +449,12 @@ class CalvinEnvironment(BaseEnvironment):
         live per-link AABB which is already accurate for small static parts.
 
         Returns:
-            Dict mapping fixture name → {'position': (3,), 'size': (3,)}
+            Dict mapping fixture name → {'position': (3,), 'size': (3,),
+            'rotation': (3, 3)}. `rotation` is the OBB's world-frame rotation
+            matrix, identity for non-rotated entries.
         """
         import pybullet as p
+        from scipy.spatial.transform import Rotation
         cid = self._gym_env._env.cameras[0].cid
 
         # Lazily compute link-frame-origin → visible-center offsets once per env.
@@ -434,40 +462,68 @@ class CalvinEnvironment(BaseEnvironment):
             self._compute_fixture_frame_offsets()
 
         link_data = {}
+        # 1. Overridden fixtures (iterate by name so multiple overrides on the
+        #    same link — e.g. switch + light_switch both on link 1 — each get
+        #    their own entry).
+        for name, override in self._FIXTURE_AABB_OVERRIDES.items():
+            link_idx = override['link_idx']
+            link_state = p.getLinkState(
+                self._PLAYTABLE_UID, link_idx,
+                computeForwardKinematics=1, physicsClientId=cid,
+            )
+            frame_origin = np.asarray(link_state[4], dtype=np.float32)
+            offset = self._fixture_frame_offsets.get(
+                name,
+                override['rest_position'] - frame_origin,  # fallback
+            )
+            euler = np.asarray(
+                override.get('euler_xyz_deg', [0.0, 0.0, 0.0]), dtype=np.float32,
+            )
+            R_world = Rotation.from_euler('xyz', euler, degrees=True).as_matrix()
+            link_data[name] = {
+                'position': (frame_origin + offset).astype(np.float32),
+                'size':     override['size'].astype(np.float32).copy(),
+                'rotation': R_world.astype(np.float32),
+            }
+
+        # 2. Non-overridden fixtures (led, lightbulb) use the live per-link AABB.
+        #    Skip links covered by any override above.
+        covered_links = {o['link_idx'] for o in self._FIXTURE_AABB_OVERRIDES.values()}
         for link_idx, name in self._LINK_FIXTURES.items():
-            if name in self._FIXTURE_AABB_OVERRIDES:
-                override = self._FIXTURE_AABB_OVERRIDES[name]
-                link_state = p.getLinkState(
-                    self._PLAYTABLE_UID, link_idx,
-                    computeForwardKinematics=1, physicsClientId=cid,
-                )
-                frame_origin = np.asarray(link_state[4], dtype=np.float32)
-                offset = self._fixture_frame_offsets.get(
-                    name,
-                    override['rest_position'] - frame_origin,  # fallback
-                )
-                link_data[name] = {
-                    'position': (frame_origin + offset).astype(np.float32),
-                    'size':     override['size'].astype(np.float32).copy(),
-                }
+            if link_idx in covered_links:
                 continue
             aabb_min, aabb_max = p.getAABB(
                 self._PLAYTABLE_UID, link_idx, physicsClientId=cid
             )
             center = (np.array(aabb_min) + np.array(aabb_max)) / 2
             size = np.array(aabb_max) - np.array(aabb_min)
-            link_data[name] = {'position': center, 'size': size}
+            link_data[name] = {
+                'position': center.astype(np.float32),
+                'size':     size.astype(np.float32),
+                'rotation': np.eye(3, dtype=np.float32),
+            }
 
-        # Compute derived fixture positions from parent link + offset, honoring
-        # an explicit size override when provided (e.g. a small handle on a large door).
+        # Compute derived fixture positions from parent link + local offset,
+        # applying the parent's rotation so handles follow tilted fixtures.
+        # world_center = parent_center + R_parent @ local_offset
+        # world_rotation = R_parent @ R_local
         for derived_name, spec in self._DERIVED_OFFSETS.items():
             parent = link_data.get(spec['parent'])
             if parent is None:
                 continue
             size = spec['size'] if spec['size'] is not None else parent['size'].copy()
+            R_parent = parent['rotation']
+            local_offset = np.asarray(spec['offset'], dtype=np.float32)
+            local_euler = np.asarray(
+                spec.get('euler_xyz_deg', [0.0, 0.0, 0.0]), dtype=np.float32,
+            )
+            R_local = Rotation.from_euler(
+                'xyz', local_euler, degrees=True,
+            ).as_matrix().astype(np.float32)
             link_data[derived_name] = {
-                'position': parent['position'] + spec['offset'],
+                'position': (parent['position'] + R_parent @ local_offset).astype(np.float32),
                 'size':     np.asarray(size, dtype=np.float32),
+                'rotation': (R_parent @ R_local).astype(np.float32),
             }
 
         return link_data
@@ -487,10 +543,8 @@ class CalvinEnvironment(BaseEnvironment):
         cid = self._gym_env._env.cameras[0].cid
         self._fixture_frame_offsets = {}
 
-        for link_idx, name in self._LINK_FIXTURES.items():
-            if name not in self._FIXTURE_AABB_OVERRIDES:
-                continue
-            override = self._FIXTURE_AABB_OVERRIDES[name]
+        for name, override in self._FIXTURE_AABB_OVERRIDES.items():
+            link_idx = override['link_idx']
             try:
                 # Snapshot current joint state
                 js = p.getJointState(self._PLAYTABLE_UID, link_idx, physicsClientId=cid)
@@ -523,19 +577,41 @@ class CalvinEnvironment(BaseEnvironment):
                     f"Could not calibrate frame offset for '{name}' (link {link_idx}): {e}"
                 )
 
+    # Per-block canonical local-frame size (meters). Pink is non-cubic.
+    _BLOCK_LOCAL_SIZES = {
+        'red_block':  np.array([0.05, 0.05, 0.05]),
+        'blue_block': np.array([0.05, 0.05, 0.05]),
+        'pink_block': np.array([0.07, 0.05, 0.05]),
+    }
+
     def _get_block_aabbs(self) -> Dict[str, Dict[str, np.ndarray]]:
-        """Return live orientation-aware AABBs for movable blocks via PyBullet.
+        """Return live orientation-aware OBBs for movable blocks via PyBullet.
+
+        Each block's pose is queried via `getBasePositionAndOrientation`, and
+        the local-frame size comes from `_BLOCK_LOCAL_SIZES`. The world-axis
+        envelope (`aabb_min`/`aabb_max`) is also included as the tight world
+        AABB of the 8 rotated corners — useful for LLM prompts that do
+        directional reasoning like "max_z of the block".
 
         Returns:
-            Dict mapping canonical block name ('red_block', 'blue_block',
-            'pink_block') → {'aabb_min': (3,), 'aabb_max': (3,), 'position': (3,)}.
-            Empty dict if the scene exposes no movable objects.
+            Dict mapping canonical block name → {'position': (3,), 'size': (3,),
+            'rotation': (3, 3), 'aabb_min': (3,), 'aabb_max': (3,)}. Empty
+            dict if the scene exposes no movable objects.
         """
         import pybullet as p
+        from scipy.spatial.transform import Rotation
         cid = self._gym_env._env.cameras[0].cid
         scene = getattr(self._gym_env._env, 'scene', None)
         if scene is None:
             return {}
+
+        # Unit cube corners in local frame (each coord ∈ {-0.5, +0.5}).
+        _LOCAL_UNIT = np.array([
+            [-0.5, -0.5, -0.5], [+0.5, -0.5, -0.5],
+            [-0.5, +0.5, -0.5], [+0.5, +0.5, -0.5],
+            [-0.5, -0.5, +0.5], [+0.5, -0.5, +0.5],
+            [-0.5, +0.5, +0.5], [+0.5, +0.5, +0.5],
+        ], dtype=np.float32)
 
         out: Dict[str, Dict[str, np.ndarray]] = {}
         for obj in getattr(scene, 'movable_objects', []):
@@ -548,13 +624,26 @@ class CalvinEnvironment(BaseEnvironment):
                 key = 'pink_block'
             else:
                 continue
-            aabb_min, aabb_max = p.getAABB(obj.uid, -1, physicsClientId=cid)
-            aabb_min = np.asarray(aabb_min, dtype=np.float32)
-            aabb_max = np.asarray(aabb_max, dtype=np.float32)
+
+            (px, py, pz), quat_xyzw = p.getBasePositionAndOrientation(
+                obj.uid, physicsClientId=cid,
+            )
+            position = np.array([px, py, pz], dtype=np.float32)
+            R = Rotation.from_quat(quat_xyzw).as_matrix().astype(np.float32)
+            size = self._BLOCK_LOCAL_SIZES[key].astype(np.float32)
+
+            # World-axis envelope of the rotated box.
+            local = _LOCAL_UNIT * size            # (8, 3)
+            world = (R @ local.T).T + position    # (8, 3)
+            aabb_min = world.min(axis=0).astype(np.float32)
+            aabb_max = world.max(axis=0).astype(np.float32)
+
             out[key] = {
+                'position': position,
+                'size':     size,
+                'rotation': R,
                 'aabb_min': aabb_min,
                 'aabb_max': aabb_max,
-                'position': (aabb_min + aabb_max) / 2,
             }
         return out
 

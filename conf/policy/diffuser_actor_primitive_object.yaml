@@ -8,7 +8,7 @@
 name: diffuser_actor
 
 # Checkpoint (trained with primitive+object ids instead of CLIP instructions)
-ckpt_path: "checkpoints/primitive_object_ABCD.pth"
+ckpt_path: "checkpoints/object_primitive_ABCD.pth"
 device: "cuda"
 
 # Architecture (must match training exactly)
