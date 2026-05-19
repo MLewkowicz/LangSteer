@@ -1,67 +1,37 @@
 # @package _global_
-# Base visualization configuration
+# Base visualization configuration.
 #
-# This unified config replaces the need for 4 separate visualization scripts:
-# - rollout_reference.py → visualization.render=true
-# - visualize_cameras.py → visualization.cameras=true
-# - visualize_trajectories.py → visualization.trajectory_3d=true
-# - visualize_reference.py → visualization.reference_plot=true
+# Iter 2 of Task 5 trimmed this from 6 mode toggles + 6 sub-configs down to
+# 3 toggles for the three surviving artifacts. Override per-renderer at the
+# CLI:  visualization.live_costmap.enabled=true
+#       visualization.video.enabled=true
+#       visualization.html.enabled=true
 
 visualization:
-  # Main visualization mode toggles
-  render: false              # PyBullet GUI rendering (from rollout_reference.py)
-  cameras: false             # Camera feed visualization (from visualize_cameras.py)
-  trajectory_3d: false       # Multi-rollout 3D trajectory analysis (from visualize_trajectories.py)
-  reference_plot: false      # Reference trajectory matplotlib plots (from visualize_reference.py)
-  live_costmap: false        # Live tk window mirroring VoxPoser's active value map (3D, rotatable)
+  # Stage HTML (Plotly 3D figures, one per stage activation).
+  html:
+    enabled: false
+    save_dir: null      # null → use Hydra output dir at runtime
+    quality: low        # 'low' | 'medium' | 'high'
 
-  # Camera visualization options
-  camera:
-    save_dir: "outputs/cameras"
-    display_mode: "side_by_side"  # "side_by_side" or "overlay"
-    save_images: true
-    show_live: false
+  # Live tk costmap window — rotatable 3D viewer mirroring the active value
+  # map alongside primitive / stage / step / instruction labels.
+  live_costmap:
+    enabled: false
+    refresh_interval: 1     # tick the window every N env steps
+    downsample: 4           # voxel-grid stride for affordance/avoidance scatters
+    point_threshold: 0.05   # min normalized intensity to render a voxel
 
-  # 3D trajectory visualization options (multi-rollout analysis)
-  trajectory:
-    num_rollouts: 10
-    max_steps: 50
-    save_dir: "outputs/trajectory_viz/${now:%Y%m%d_%H%M%S}"
-    modes:
-      - scatter
-      - lines
-    plot_options:
-      point_size: 3
-      line_width: 2
-      opacity: 0.7
-      colormap: "tab10"
-    snapshot_load_path: null
-    snapshot_save_path: "outputs/snapshots/${now:%Y%m%d_%H%M%S}_initial.npz"
-    snapshot_auto_save: true
-
-  # Reference trajectory visualization options (matplotlib)
-  reference:
-    save_dir: "outputs/reference_viz"
-    show_windows: true
-    plot_full_trajectory: true
-    plot_sliding_windows: true
-    window_timesteps: [0, 10, 20, 30]
-
-  # PyBullet rollout playback options
-  rollout:
-    frame_skip: 1
-    playback_speed: 1.0
-    keep_gui_open: true
-
-  # Video recording options (future feature)
+  # MP4 video recorder for the static + gripper cameras.
   video:
     enabled: false
     save_path: "outputs/videos"
     fps: 30
     codec: "mp4v"
-
-  # Live tk costmap window settings (used when live_costmap: true)
-  live_costmap_cfg:
-    refresh_interval: 1     # tick the window every N env steps
-    downsample: 4           # voxel-grid stride for affordance/avoidance scatters
-    point_threshold: 0.05   # min normalized intensity to render a voxel
+    # Optional high-res overrides (does NOT affect policy inputs).
+    # 0 = use native camera resolution (200×200 static, 84×84 gripper).
+    static_record_width: 0
+    static_record_height: 0
+    gripper_record_width: 0
+    gripper_record_height: 0
+    static_camera_fov: null   # null = native CALVIN FOV (10°)

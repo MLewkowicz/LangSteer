@@ -1,39 +1,14 @@
 # @package _global_
 # Visualization config for multi-stage task recording.
-# Enables MP4 video recording of both cameras; all other modes off.
+# Enables MP4 video recording of both cameras at high resolution; all other
+# modes off. Trimmed by iter 2 of Task 5 to the surviving video block.
 
 visualization:
-  render: false
-  cameras: false
-  trajectory_3d: false
-  reference_plot: false
-  live_costmap: false
+  html:
+    enabled: false
 
-  camera:
-    save_dir: "outputs/cameras"
-    display_mode: "side_by_side"
-    save_images: false
-    show_live: false
-
-  trajectory:
-    num_rollouts: 10
-    max_steps: 50
-    save_dir: "outputs/trajectory_viz"
-    modes:
-      - scatter
-      - lines
-
-  reference:
-    save_dir: "outputs/reference_viz"
-    show_windows: false
-    plot_full_trajectory: false
-    plot_sliding_windows: false
-    window_timesteps: [0, 10, 20, 30]
-
-  rollout:
-    frame_skip: 1
-    playback_speed: 1.0
-    keep_gui_open: false
+  live_costmap:
+    enabled: false
 
   video:
     enabled: true
@@ -41,7 +16,6 @@ visualization:
     fps: 15
     codec: "mp4v"
     # Record cameras at high resolution via PyBullet re-render.
-    # Set to 0 to use native resolution (200x200 static, 84x84 gripper).
     # Does NOT affect policy inputs.
     static_record_width: 600
     static_record_height: 600
@@ -50,8 +24,3 @@ visualization:
     # Optional FOV override for static camera re-renders (degrees).
     # null = use CALVIN's native 10°. Increase to ~20-30° to see full robot arm.
     static_camera_fov: 20
-
-  live_costmap_cfg:
-    refresh_interval: 1
-    downsample: 4
-    point_threshold: 0.05

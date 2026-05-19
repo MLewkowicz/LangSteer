@@ -1,4 +1,13 @@
-"""Main evaluation loop for running experiments."""
+"""Main evaluation loop for running experiments.
+
+Starting state selection (mutually exclusive, both override env.use_task_initial_condition):
+  episode_id=<int>          Load that exact dataset episode's starting frame.
+  sample_from_dataset=true  Sample num_episodes valid starts from the dataset for
+                            cfg.env.task (deterministic in cfg.seed). Required when
+                            the task assumes the gripper is already holding a block
+                            (e.g. place_in_slider) — the synthetic task_configs.py
+                            preset places all blocks on the table.
+"""
 
 import hydra
 from hydra.core.hydra_config import HydraConfig
@@ -38,8 +47,8 @@ def instantiate_policy(cfg: DictConfig) -> BasePolicy:
     """Factory function to instantiate policy based on config."""
     policy_name = cfg.policy.name
     if policy_name == "diffuser_actor":
-        from policies.diffuser_actor import DiffuserActorPolicy
-        policy = DiffuserActorPolicy(OmegaConf.to_container(cfg.policy, resolve=True))
+        from policies.diffuser_actor import build_diffuser_actor_policy
+        policy = build_diffuser_actor_policy(OmegaConf.to_container(cfg.policy, resolve=True))
     else:
         raise ValueError(f"Unknown policy: {policy_name}")
 
@@ -174,6 +183,32 @@ def main(cfg: DictConfig) -> None:
     num_episodes = cfg.get("num_episodes", 10)
     success_count = 0
 
+    # Optional: presample valid starting states from the CALVIN dataset for this task.
+    # Reuses run_evaluation's deterministic sampler so seed actually changes the start
+    # and the result is reproducible.
+    sampled_conditions = None
+    sampled_episode_ids = None
+    if cfg.get('sample_from_dataset', False):
+        from scripts.run_evaluation import presample_starting_conditions
+        sampled_map, ids_map = presample_starting_conditions(
+            dataset_path=Path(cfg.env.dataset_path),
+            split=cfg.env.split,
+            task_list=[env._task_name],
+            num_episodes=num_episodes,
+            seed=cfg.seed,
+        )
+        sampled_conditions = sampled_map.get(env._task_name, [])
+        sampled_episode_ids = ids_map.get(env._task_name, [])
+        if not sampled_conditions:
+            raise RuntimeError(
+                f"sample_from_dataset=true but no dataset episodes were found for "
+                f"task '{env._task_name}' in {cfg.env.dataset_path}/{cfg.env.split}."
+            )
+        logger.info(
+            f"Presampled {len(sampled_conditions)} starting states for "
+            f"'{env._task_name}' from dataset (seed={cfg.seed})"
+        )
+
     for episode in range(num_episodes):
         logger.info(f"\n{'='*60}")
         logger.info(f"Episode {episode + 1}/{num_episodes}")
@@ -192,6 +227,13 @@ def main(cfg: DictConfig) -> None:
             _ep_robot_obs = data['robot_obs'].astype(np.float32)
             _ep_scene_obs = data['scene_obs'].astype(np.float32)
             logger.info(f"Loading starting state from dataset episode {int(episode_id_override):07d}")
+        elif sampled_conditions is not None:
+            _ep_robot_obs, _ep_scene_obs = sampled_conditions[episode]
+            source_ep_id = sampled_episode_ids[episode]
+            logger.info(
+                f"Sampled starting state from dataset episode {int(source_ep_id):07d} "
+                f"(episode {episode + 1}/{num_episodes}, seed={cfg.seed})"
+            )
         else:
             _ep_robot_obs = _ep_scene_obs = None
 
@@ -284,9 +326,8 @@ def main(cfg: DictConfig) -> None:
             if reward > 0:
                 logger.info(f"        | Reward: {reward:.2f} ✓")
 
-        # Reset visualization for new episode and start video recording
+        # Start video recording for the new episode (no-op when video disabled).
         if viz_manager:
-            viz_manager.reset()
             viz_manager.start_recording(episode)
 
         # Register per-waypoint recording callback so every sub-step is captured,
@@ -351,18 +392,8 @@ def main(cfg: DictConfig) -> None:
             result.trajectory_collector.save_to_npz(str(traj_path))
             logger.info(f"Saved trajectory to {traj_path}")
 
-        # Visualize episode if visualization is enabled
-        # Note: Camera and PyBullet rendering happen during the episode via callbacks
-        # This is for post-episode visualizations like reference plots
-        if viz_manager and viz_manager.config.reference_plot:
-            # If steering is active and has reference trajectory, visualize it
-            if steering is not None and hasattr(steering, 'reference_trajectory'):
-                if steering.reference_trajectory is not None:
-                    viz_manager.visualize_reference_trajectory(
-                        steering.reference_trajectory,
-                        task_name=env._task_name,
-                        horizon=cfg.policy.get('pred_horizon', 16)
-                    )
+        # (Iter 2 of Task 5 removed the reference_plot / matplotlib renderer
+        # post-episode hook — the matplotlib renderer is gone.)
 
         # Update counters and log results
         if result.success:

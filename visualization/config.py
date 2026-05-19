@@ -1,53 +1,31 @@
-"""Configuration dataclasses for visualization system."""
+"""Configuration dataclasses for the visualization system.
+
+Iter 2 of Task 5: dropped `CameraVisualizationConfig`,
+`TrajectoryVisualizationConfig`, `ReferenceVisualizationConfig`, and
+`RolloutVisualizationConfig` alongside the master `render` / `cameras` /
+`trajectory_3d` / `reference_plot` toggles. The surviving three blocks
+drive the three artifacts the user-facing brief retained:
+    - `html`           — stage HTML (via `StageHtmlRenderer`)
+    - `live_costmap`   — live tk costmap window (via `LiveCostmapWindow`)
+    - `video`          — MP4 video recording (via `CameraRenderer`)
+"""
 
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict
-from pathlib import Path
+from typing import Optional
 
 
 @dataclass
-class CameraVisualizationConfig:
-    """Configuration for camera view visualization."""
-    save_dir: str = "outputs/cameras"
-    display_mode: str = "side_by_side"  # "side_by_side" or "overlay"
-    save_images: bool = True
-    show_live: bool = False
+class HtmlConfig:
+    """Configuration for the stage HTML renderer (`StageHtmlRenderer`).
 
-
-@dataclass
-class TrajectoryVisualizationConfig:
-    """Configuration for 3D trajectory visualization (multi-rollout analysis)."""
-    num_rollouts: int = 10
-    max_steps: int = 50
-    save_dir: str = "outputs/trajectory_viz"
-    modes: List[str] = field(default_factory=lambda: ["scatter", "lines"])
-    plot_options: Dict = field(default_factory=lambda: {
-        "point_size": 3,
-        "line_width": 2,
-        "opacity": 0.7,
-        "colormap": "tab10"
-    })
-    snapshot_load_path: Optional[str] = None
-    snapshot_save_path: Optional[str] = "outputs/snapshots/initial.npz"
-    snapshot_auto_save: bool = True
-
-
-@dataclass
-class ReferenceVisualizationConfig:
-    """Configuration for reference trajectory visualization (matplotlib plots)."""
-    save_dir: str = "outputs/reference_viz"
-    show_windows: bool = True
-    plot_full_trajectory: bool = True
-    plot_sliding_windows: bool = True
-    window_timesteps: List[int] = field(default_factory=lambda: [0, 10, 20, 30])
-
-
-@dataclass
-class RolloutVisualizationConfig:
-    """Configuration for PyBullet GUI rollout visualization."""
-    frame_skip: int = 1
-    playback_speed: float = 1.0
-    keep_gui_open: bool = True
+    The renderer emits one Plotly HTML file per stage activation under
+    `save_dir`. `null` save_dir uses the Hydra output directory at runtime.
+    `quality` is passed through to `ValueMapVisualizer` (one of 'low',
+    'medium', 'high').
+    """
+    enabled: bool = False
+    save_dir: Optional[str] = None
+    quality: str = "low"
 
 
 @dataclass
@@ -58,14 +36,20 @@ class LiveCostmapConfig:
     window mirrors `VoxPoserSteering._value_map` in real time alongside the
     PyBullet view, replacing the old browser-based Dash server.
     """
-    refresh_interval: int = 1   # tick the window every N env steps
-    downsample: int = 4         # voxel-grid stride for affordance/avoidance scatters
+    enabled: bool = False
+    refresh_interval: int = 1      # tick the window every N env steps
+    downsample: int = 4            # voxel-grid stride for affordance/avoidance scatters
     point_threshold: float = 0.05  # min normalized intensity to render a voxel
 
 
 @dataclass
 class VideoConfig:
-    """Configuration for video recording."""
+    """Configuration for MP4 video recording.
+
+    Drives `visualization/renderers/camera_renderer.py:CameraRenderer`'s
+    video path (`start_video` / `write_frame` / `stop_video`). Iter 3
+    renames the class to `VideoRecorder` and strips the per-step PNG path.
+    """
     enabled: bool = False
     save_path: str = "outputs/videos"
     fps: int = 30
@@ -77,75 +61,32 @@ class VideoConfig:
     gripper_record_width: int = 0
     gripper_record_height: int = 0
     # Optional FOV override for static camera re-renders (degrees).
-    # None = use CALVIN's native FOV.
+    # `None` = use CALVIN's native FOV.
     static_camera_fov: Optional[float] = None
 
 
 @dataclass
 class VisualizationConfig:
-    """
-    Master configuration for all visualization modes.
+    """Master config for the three surviving visualization artifacts."""
 
-    This replaces the need for separate visualization scripts by providing
-    a unified config-driven interface for all visualization types.
-
-    Attributes:
-        render: Enable PyBullet GUI rendering (from rollout_reference.py)
-        cameras: Enable camera feed visualization (from visualize_cameras.py)
-        trajectory_3d: Enable multi-rollout 3D trajectory analysis (from visualize_trajectories.py)
-        reference_plot: Enable reference trajectory matplotlib plots (from visualize_reference.py)
-    """
-
-    # Main visualization mode toggles
-    render: bool = False
-    cameras: bool = False
-    trajectory_3d: bool = False
-    reference_plot: bool = False
-    live_costmap: bool = False
-
-    # Sub-configurations for each mode
-    camera: CameraVisualizationConfig = field(default_factory=CameraVisualizationConfig)
-    trajectory: TrajectoryVisualizationConfig = field(default_factory=TrajectoryVisualizationConfig)
-    reference: ReferenceVisualizationConfig = field(default_factory=ReferenceVisualizationConfig)
-    rollout: RolloutVisualizationConfig = field(default_factory=RolloutVisualizationConfig)
-    # video.enabled acts as the toggle for video recording
+    html: HtmlConfig = field(default_factory=HtmlConfig)
+    live_costmap: LiveCostmapConfig = field(default_factory=LiveCostmapConfig)
     video: VideoConfig = field(default_factory=VideoConfig)
-    live_costmap_cfg: LiveCostmapConfig = field(default_factory=LiveCostmapConfig)
 
     @classmethod
-    def from_dict(cls, config_dict: dict) -> 'VisualizationConfig':
-        """Create VisualizationConfig from nested dictionary (e.g., from Hydra)."""
-        # Extract main toggles
-        render = config_dict.get('render', False)
-        cameras = config_dict.get('cameras', False)
-        trajectory_3d = config_dict.get('trajectory_3d', False)
-        reference_plot = config_dict.get('reference_plot', False)
-        live_costmap = config_dict.get('live_costmap', False)
+    def from_dict(cls, config_dict: dict) -> "VisualizationConfig":
+        """Build from a nested dict (Hydra-friendly).
 
-        # Extract sub-configs
-        camera_config = CameraVisualizationConfig(**config_dict.get('camera', {}))
-        trajectory_config = TrajectoryVisualizationConfig(**config_dict.get('trajectory', {}))
-        reference_config = ReferenceVisualizationConfig(**config_dict.get('reference', {}))
-        rollout_config = RolloutVisualizationConfig(**config_dict.get('rollout', {}))
-        video_config = VideoConfig(**config_dict.get('video', {}))
-        live_costmap_config = LiveCostmapConfig(**config_dict.get('live_costmap_cfg', {}))
-
+        Unknown keys are silently ignored so legacy YAML configs with
+        `cameras: false` / `render: false` / etc. still load cleanly during
+        the iter 1→3 transition. Iter 4 wires this into `run_evaluation.py`.
+        """
         return cls(
-            render=render,
-            cameras=cameras,
-            trajectory_3d=trajectory_3d,
-            reference_plot=reference_plot,
-            live_costmap=live_costmap,
-            camera=camera_config,
-            trajectory=trajectory_config,
-            reference=reference_config,
-            rollout=rollout_config,
-            video=video_config,
-            live_costmap_cfg=live_costmap_config,
+            html=HtmlConfig(**config_dict.get("html", {})),
+            live_costmap=LiveCostmapConfig(**config_dict.get("live_costmap", {})),
+            video=VideoConfig(**config_dict.get("video", {})),
         )
 
     def is_any_enabled(self) -> bool:
-        """Check if any visualization mode is enabled."""
-        return (self.render or self.cameras or self.trajectory_3d
-                or self.reference_plot or self.video.enabled
-                or self.live_costmap)
+        """True iff at least one renderer is enabled."""
+        return self.html.enabled or self.live_costmap.enabled or self.video.enabled

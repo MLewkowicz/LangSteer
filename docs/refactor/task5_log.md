@@ -120,7 +120,118 @@ code — i.e. iter 1's additive changes don't perturb inference.
 
 ---
 
-## Iter 2 — _(pending iter 1 approval)_
+## Iter 2 — Strip dead visualization infrastructure
+
+**Date:** 2026-05-19.
+**Scope (per plan §5 iter 2 + team-lead's iter-2 brief):** delete 3 legacy
+renderers, the trajectory collector, the orphan `utils/visualization/`
+package, and `tmp/denoise_visualizer/`. Slim `config.py` to the three
+surviving sub-configs + `VisualizationConfig` master. Strip dead manager
+wrappers + dead CameraRenderer paths. Update `run_experiment.py` callers.
+
+### Files deleted (7 targets — all from team-lead's strip list)
+
+1. `visualization/renderers/plotly_renderer.py` (206 LoC).
+2. `visualization/renderers/matplotlib_renderer.py` (124 LoC).
+3. `visualization/renderers/pybullet_renderer.py` (98 LoC; also clears the
+   9 pre-existing ruff F841 errors).
+4. `visualization/collectors/` — full dir: `__init__.py` (8 LoC) +
+   `trajectory_collector.py` (213 LoC).
+5. `utils/visualization/` — full dir: `__init__.py` (1 LoC) +
+   `trajectory_viz.py` (397 LoC) + `plotly_viz.py` (236 LoC, orphan).
+6. `tmp/denoise_visualizer/` — confirmed untracked (`git ls-files tmp/`
+   returns 0); plain `rm -rf`.
+
+Net deletion: ~1283 LoC + 6 files + 2 directories.
+
+### Files slimmed
+
+- `visualization/config.py`: 151 → 87 LoC.
+  - Dropped: `CameraVisualizationConfig`, `TrajectoryVisualizationConfig`,
+    `ReferenceVisualizationConfig`, `RolloutVisualizationConfig` (4
+    dataclasses).
+  - Dropped master toggles: `render`, `cameras`, `trajectory_3d`,
+    `reference_plot` + their `camera`/`trajectory`/`reference`/`rollout`
+    sub-config fields.
+  - Added `HtmlConfig` (enabled + save_dir + quality) for the new
+    `StageHtmlRenderer`.
+  - `LiveCostmapConfig` + `VideoConfig` gained an `enabled: bool = False`
+    field (was on the parent toggle). Master is now `{html, live_costmap,
+    video}`.
+  - `VisualizationConfig.from_dict` silently ignores unknown keys so
+    legacy YAML configs with `cameras: false` / `render: false` /
+    `live_costmap: false` still load during iter 1→3 transition.
+- `visualization/manager.py`: 285 → 220 LoC.
+  - Dropped PyBullet / Matplotlib / Plotly init branches +
+    `_pybullet_renderer` / `_matplotlib_renderer` / `_plotly_renderer`
+    fields.
+  - Dropped `visualize_episode` / `visualize_reference_trajectory` /
+    `visualize_multi_rollout` / `visualize_step` legacy wrappers (their
+    renderers are gone).
+  - Dropped `reset()` method (CameraRenderer's `reset` was only used by
+    the dead per-step image-save path).
+  - Added `html.enabled` init branch wiring `StageHtmlRenderer` through
+    the Manager (Protocol-only; iter 3 routes the
+    `stage_manager.py:425-430` direct call site through here).
+  - Kept the 5 deprecated aliases (`update_costmap` / `tick_costmap` /
+    `start_recording` / `stop_recording` / `record_step` / `shutdown`)
+    for `run_experiment.py`. Iter 3 removes them.
+- `visualization/renderers/camera_renderer.py`: 249 → ~165 LoC.
+  - Dropped: `render_step`, `display_cameras`, `reset`, `step_counter`,
+    `matplotlib.pyplot` import, `PIL.Image` import.
+  - Constructor signature now accepts a `VideoConfig` (the surviving
+    block) instead of the deleted `CameraVisualizationConfig`. The
+    Manager passes `config.video`.
+  - Kept legacy aliases `start_video` / `write_frame` / `stop_video`
+    routing to the new internal `_start_video` / `_write_frame` /
+    `_stop_video` (`run_experiment.py`'s `viz_manager.start_recording`
+    deprecated alias still depends on them via the Manager).
+- `visualization/renderers/__init__.py`: dropped 3 stripped exports;
+  three survivors remain (`CameraRenderer`, `LiveCostmapWindow`,
+  `StageHtmlRenderer`).
+- `conf/visualization/base.yaml`: 68 → 34 LoC. 3 toggle blocks
+  (`html`/`live_costmap`/`video`) only.
+- `conf/visualization/multistage.yaml`: 58 → 25 LoC. Video block only.
+
+### Files modified outside `visualization/`
+
+- `scripts/run_experiment.py`:
+  - Dropped `viz_manager.reset()` call at line 331 (the corresponding
+    Manager.reset is gone).
+  - Dropped the post-episode `reference_plot` block (lines 396-407 —
+    matplotlib renderer is gone). 12 LoC removed; replaced with a 2-line
+    comment noting iter 2's removal.
+
+### Validation (per iter 2 acceptance)
+
+| Check | Result |
+|---|---|
+| 7 files / dirs deleted | ✓ verified `ls` returns empty for stripped paths |
+| `git ls-files tmp/` | 0 (confirmed untracked before delete) |
+| `ruff check visualization/` | **0 errors** (was 9; all pre-existing in `pybullet_renderer.py`) |
+| Grep for stranded imports | `grep -rn "from utils.visualization\|visualization.collectors\|PlotlyRenderer\|MatplotlibRenderer\|PyBulletRenderer\|TrajectoryCollector\|trajectory_viz\|plotly_viz" --include="*.py"` → **0 hits** in production code |
+| Module-level smoke | imports clean; empty / video-only Manager constructs; legacy-key `from_dict` ignored cleanly; Protocol dispatch + lifecycle hooks all work |
+| Eval smoke (1×1 `open_drawer`) | **1/1 success, 3 steps** — identical to iter 1 baseline. No behavioral regression. |
+
+### Notes / known follow-up
+
+- `utils/visualize_steering.py` is now orphaned (only consumer was the
+  deleted `matplotlib_renderer.py`). Not on team-lead's strip list; left
+  intact for a separate follow-up.
+- `tmp/` contains other untracked subdirs (`bbox_annotator`,
+  `bimodal_experiment`, `p4_validation`, `visualizations`). Only
+  `denoise_visualizer/` was on the strip list; others untouched.
+- 4 pre-existing F401 errors remain in `scripts/run_experiment.py`
+  (`Dict`, `Any`, `Observation`, `Action` unused). Pre-existing —
+  unrelated to iter 2. Filed for a separate import-hygiene pass.
+
+### Iter 2 acceptance — status
+
+- [x] All 7 strip targets deleted.
+- [x] `ruff check visualization/` → 0 errors.
+- [x] 0 stranded imports in production code.
+- [x] Eval smoke run succeeds with no behavioral regression
+      (open_drawer 1/1, 3 steps — identical to iter 1 baseline).
 
 ## Iter 3 — _(pending)_
 

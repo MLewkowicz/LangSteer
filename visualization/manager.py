@@ -1,23 +1,19 @@
 """Visualization Manager — Renderer Protocol dispatcher.
 
-Iter 1 of Task 5: rewritten from toggle-keyed branching (272 LoC) to a thin
-list-iteration dispatcher (~140 LoC including deprecated aliases). Each
-enabled renderer is appended to `self._renderers`; the Manager fans
-`update_state` / `tick` / `close` plus the optional `on_episode_start` /
-`on_episode_end` / `on_waypoint` hooks out via `getattr(..., _noop)` so
-strict 3-method Protocol implementers also work.
+Iter 2 of Task 5: dropped PyBullet / Matplotlib / Plotly init branches and
+the legacy `visualize_*` convenience wrappers — the corresponding renderers
+no longer exist. The manager now dispatches exclusively over the three
+surviving renderers (`StageHtmlRenderer`, `LiveCostmapWindow`,
+`CameraRenderer`).
 
-Deprecated aliases (kept through iter 2; removed in iter 3):
+Deprecated aliases (kept through iter 2 for `run_experiment.py`; iter 3
+removes them):
 - `update_costmap(**kwargs)` → `update_state(state_dict)`
 - `tick_costmap()`           → `tick()`
 - `start_recording(eid)`     → `on_episode_start(eid)` (video only)
 - `record_step(frames)`      → `on_waypoint(frames)` (video only)
 - `stop_recording()`         → `on_episode_end()` (video only)
 - `shutdown()`               → `close()`
-- `reset()`                  → CameraRenderer.reset() (iter 2 strips)
-
-The legacy `visualize_*` methods are kept verbatim for `run_experiment.py`'s
-PyBullet / multi-rollout / reference-plot call sites; iter 2 strips them.
 """
 
 from __future__ import annotations
@@ -44,50 +40,36 @@ class VisualizationManager:
         self.config = config
         self._renderers: list[Renderer] = []
 
-        # Camera renderer (handles video recording; also legacy per-step PNGs).
-        # Iter 3 splits these — image-saving goes away, MP4 path stays.
-        self._camera_renderer = None
-        if config.cameras or config.video.enabled:
-            from .renderers import CameraRenderer
-            self._camera_renderer = CameraRenderer(config.camera)
-            self._renderers.append(self._camera_renderer)
-            logger.info("Initialized camera renderer (video + per-step PNGs)")
+        # Stage HTML renderer (Protocol-only, opt-in via `cfg.html.enabled`).
+        if config.html.enabled:
+            from .renderers import StageHtmlRenderer
+            self._renderers.append(
+                StageHtmlRenderer(
+                    save_dir=config.html.save_dir,
+                    quality=config.html.quality,
+                )
+            )
+            logger.info("Initialized stage HTML renderer")
 
-        # PyBullet renderer (legacy; iter 2 strips).
-        self._pybullet_renderer = None
-        if config.render:
-            from .renderers import PyBulletRenderer
-            self._pybullet_renderer = PyBulletRenderer(config.rollout)
-            self._renderers.append(self._pybullet_renderer)
-            logger.info("Initialized PyBullet renderer (legacy; iter 2 strips)")
-
-        # Matplotlib reference-plot renderer (legacy; iter 2 strips).
-        self._matplotlib_renderer = None
-        if config.reference_plot:
-            from .renderers import MatplotlibRenderer
-            self._matplotlib_renderer = MatplotlibRenderer(config.reference)
-            self._renderers.append(self._matplotlib_renderer)
-            logger.info("Initialized matplotlib renderer (legacy; iter 2 strips)")
-
-        # Plotly multi-rollout renderer (legacy; iter 2 strips).
-        self._plotly_renderer = None
-        if config.trajectory_3d:
-            from .renderers import PlotlyRenderer
-            self._plotly_renderer = PlotlyRenderer(config.trajectory)
-            self._renderers.append(self._plotly_renderer)
-            logger.info("Initialized Plotly renderer (legacy; iter 2 strips)")
-
-        # Live tk costmap window — driven via Protocol dispatch.
+        # Live tk costmap window.
         self._live_costmap = None
-        if config.live_costmap:
+        if config.live_costmap.enabled:
             from .renderers import LiveCostmapWindow
             self._live_costmap = LiveCostmapWindow(
-                refresh_interval=config.live_costmap_cfg.refresh_interval,
-                downsample=config.live_costmap_cfg.downsample,
-                point_threshold=config.live_costmap_cfg.point_threshold,
+                refresh_interval=config.live_costmap.refresh_interval,
+                downsample=config.live_costmap.downsample,
+                point_threshold=config.live_costmap.point_threshold,
             )
             self._renderers.append(self._live_costmap)
             logger.info("Initialized live tk costmap window")
+
+        # MP4 video recorder (still `CameraRenderer`; iter 3 renames).
+        self._camera_renderer = None
+        if config.video.enabled:
+            from .renderers import CameraRenderer
+            self._camera_renderer = CameraRenderer(config.video)
+            self._renderers.append(self._camera_renderer)
+            logger.info("Initialized video recorder")
 
     # ------------------------------------------------------------------
     # Renderer Protocol dispatch
@@ -135,7 +117,7 @@ class VisualizationManager:
         return bool(self._renderers)
 
     # ------------------------------------------------------------------
-    # Deprecated aliases (iter 1+2 carry-over; iter 3 removes)
+    # Deprecated aliases (iter 2 carry-over; iter 3 removes)
     # ------------------------------------------------------------------
 
     def update_costmap(
@@ -226,71 +208,14 @@ class VisualizationManager:
         )
         self.close()
 
-    def reset(self) -> None:
-        """Reset CameraRenderer's per-episode step counter.
-
-        Retained without deprecation warning — iter 2 strips the underlying
-        step counter when image-saving is removed.
-        """
-        if self._camera_renderer is not None:
-            self._camera_renderer.reset()
-
-    # ------------------------------------------------------------------
-    # Legacy convenience wrappers (kept through iter 2; iter 2 strips)
-    # ------------------------------------------------------------------
-
-    def visualize_episode(
-        self,
-        env,
-        episode_result: Optional[Any] = None,
-        actions: Optional[Any] = None,
-        calvin_obs: Optional[dict] = None,
-        step: Optional[int] = None,
-    ) -> None:
-        """Legacy entry point used by `run_experiment.py` for PyBullet + camera viz."""
-        if self.config.cameras and calvin_obs is not None and self._camera_renderer is not None:
-            self._camera_renderer.render_step(calvin_obs, step)
-        if self.config.render and actions is not None and self._pybullet_renderer is not None:
-            self._pybullet_renderer.render_episode(env, actions)
-
-    def visualize_reference_trajectory(
-        self, actions, task_name: str = "task", horizon: int = 16
-    ) -> None:
-        """Legacy matplotlib reference-trajectory plot. Iter 2 strips."""
-        if self.config.reference_plot and self._matplotlib_renderer is not None:
-            self._matplotlib_renderer.render_reference_trajectory(
-                actions, task_name, horizon
-            )
-
-    def visualize_multi_rollout(self, env, policy, steering=None, snapshot=None):
-        """Legacy Plotly multi-rollout 3D analysis. Iter 2 strips."""
-        if self.config.trajectory_3d and self._plotly_renderer is not None:
-            return self._plotly_renderer.render_multi_rollout_trajectories(
-                env, policy, steering, snapshot
-            )
-        return None
-
-    def visualize_step(self, env, action=None, calvin_obs=None, step=None) -> None:
-        """Legacy per-step camera + PyBullet entry point. Iter 2 strips."""
-        if self.config.cameras and calvin_obs is not None and self._camera_renderer is not None:
-            self._camera_renderer.render_step(calvin_obs, step)
-        if self.config.render and self._pybullet_renderer is not None:
-            self._pybullet_renderer.render_step(env, action)
-
     def __repr__(self) -> str:
         enabled = []
-        if self.config.render:
-            enabled.append("render")
-        if self.config.cameras:
-            enabled.append("cameras")
-        if self.config.trajectory_3d:
-            enabled.append("trajectory_3d")
-        if self.config.reference_plot:
-            enabled.append("reference_plot")
+        if self.config.html.enabled:
+            enabled.append("html")
+        if self.config.live_costmap.enabled:
+            enabled.append("live_costmap")
         if self.config.video.enabled:
             enabled.append("video")
-        if self.config.live_costmap:
-            enabled.append("live_costmap")
         if not enabled:
             return "VisualizationManager(no modes enabled)"
         return f"VisualizationManager(modes={enabled})"

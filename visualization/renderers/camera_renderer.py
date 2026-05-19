@@ -1,14 +1,23 @@
-"""Camera view renderer - displays RGB images from CALVIN cameras.
+"""MP4 video recorder for CALVIN camera streams.
 
-Extracted from scripts/visualize_cameras.py
+Iter 2 of Task 5: stripped the per-step PNG / matplotlib display paths.
+The class now only handles MP4 recording for the static + gripper cameras.
+Iter 3 will rename `CameraRenderer` → `VideoRecorder` to match the
+post-strip responsibility.
+
+Lifecycle (Renderer Protocol):
+    on_episode_start(eid, video_cfg)  → open writers lazily on first frame
+    on_waypoint(frames)               → write one frame per camera
+    on_episode_end() / close()        → flush + release writers
 """
 
-import numpy as np
+from __future__ import annotations
+
 import logging
 from pathlib import Path
-from PIL import Image
-from typing import Dict, Optional
-import matplotlib.pyplot as plt
+from typing import Any, Dict, Optional
+
+import numpy as np
 
 try:
     import cv2
@@ -20,124 +29,74 @@ logger = logging.getLogger(__name__)
 
 
 class CameraRenderer:
-    """Renders camera views from CALVIN environment (static overhead + gripper cameras)."""
+    """Records CALVIN camera streams to MP4 (static overhead + gripper)."""
 
-    def __init__(self, config):
-        """
-        Initialize camera renderer.
-
-        Args:
-            config: CameraVisualizationConfig instance
+    def __init__(self, config: Optional[Any] = None) -> None:
+        """Args:
+            config: `VideoConfig` (or None). Currently unused at construction;
+                video parameters are passed on `on_episode_start(video_cfg=...)`.
+                Stashed so future renderer state can read it without changing
+                the Protocol.
         """
         self.config = config
-        self.output_dir = Path(config.save_dir)
-        self.step_counter = 0
 
-        if config.save_images:
-            self.output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Video recording state
-        self._video_writers: Dict[str, any] = {}
-        self._video_writer_sizes: Dict[str, tuple] = {}  # cam_key → (w, h) for the open writer
+        # Video state (writers are opened lazily on first frame so their
+        # dimensions match the actual data — avoids resize mismatches when
+        # the env upsamples gripper frames to match static resolution).
+        self._video_writers: Dict[str, Any] = {}
+        self._video_writer_sizes: Dict[str, tuple] = {}
         self._video_save_path: Optional[Path] = None
         self._video_fps: int = 15
         self._video_codec: str = "mp4v"
         self._video_episode_id: int = 0
-        self._static_record_size: Optional[tuple] = None  # (w, h) override for static cam
+        self._static_record_size: Optional[tuple] = None
 
-    def render_step(self, calvin_obs: Dict, step: int = None) -> Dict[str, np.ndarray]:
+    # ------------------------------------------------------------------
+    # Renderer Protocol
+    # ------------------------------------------------------------------
+
+    def update_state(self, state: dict) -> None:
+        """No-op — video reacts to lifecycle hooks, not per-step state."""
+        return None
+
+    def tick(self) -> None:
+        """No-op — frames are written via `on_waypoint`, not `tick`."""
+        return None
+
+    def close(self) -> None:
+        """Flush + release any open video writers."""
+        self._stop_video()
+
+    def on_episode_start(self, episode_id: int, *, video_cfg: Any = None) -> None:
+        """Open video writers for a new episode (lazy on first frame).
+
+        `video_cfg` is the resolved `VideoConfig` (Manager passes it on
+        dispatch). If `video_cfg.enabled` is False, this is a no-op.
         """
-        Render camera views for a single step.
-
-        Args:
-            calvin_obs: Raw CALVIN observation dict with 'rgb_static' and 'rgb_gripper' keys
-            step: Step number for filename (uses internal counter if None)
-
-        Returns:
-            Dictionary with camera names as keys and RGB images as values
-        """
-        if step is None:
-            step = self.step_counter
-            self.step_counter += 1
-
-        images = {}
-
-        # Extract and save static camera
-        rgb_static = calvin_obs.get('rgb_static')
-        if rgb_static is not None:
-            rgb_static = self._normalize_image(rgb_static)
-            images['static'] = rgb_static
-
-            if self.config.save_images:
-                img_static = Image.fromarray(rgb_static)
-                static_path = self.output_dir / f"step_{step:04d}_static.png"
-                img_static.save(static_path)
-                logger.debug(f"Saved static camera: {static_path}")
-
-        # Extract and save gripper camera
-        rgb_gripper = calvin_obs.get('rgb_gripper')
-        if rgb_gripper is not None:
-            rgb_gripper = self._normalize_image(rgb_gripper)
-            images['gripper'] = rgb_gripper
-
-            if self.config.save_images:
-                img_gripper = Image.fromarray(rgb_gripper)
-                gripper_path = self.output_dir / f"step_{step:04d}_gripper.png"
-                img_gripper.save(gripper_path)
-                logger.debug(f"Saved gripper camera: {gripper_path}")
-
-        # Display live if requested
-        if self.config.show_live and images:
-            self.display_cameras(images)
-
-        return images
-
-    def display_cameras(self, images: Dict[str, np.ndarray]):
-        """Display camera views side-by-side using matplotlib."""
-        n_cameras = len(images)
-        if n_cameras == 0:
+        if video_cfg is None or not video_cfg.enabled:
             return
+        self._start_video(
+            episode_id=episode_id,
+            save_path=video_cfg.save_path,
+            fps=video_cfg.fps,
+            codec=video_cfg.codec,
+            static_record_width=video_cfg.static_record_width,
+            static_record_height=video_cfg.static_record_height,
+        )
 
-        if self.config.display_mode == "side_by_side":
-            fig, axes = plt.subplots(1, n_cameras, figsize=(6 * n_cameras, 6))
-            if n_cameras == 1:
-                axes = [axes]
+    def on_episode_end(self) -> None:
+        """Flush writers at episode end."""
+        self._stop_video()
 
-            for ax, (name, img) in zip(axes, images.items()):
-                ax.imshow(img)
-                ax.set_title(f"{name.capitalize()} Camera", fontsize=14)
-                ax.axis('off')
-
-            plt.tight_layout()
-            plt.draw()
-            plt.pause(0.001)  # Non-blocking update
-
-        elif self.config.display_mode == "overlay":
-            # Simple overlay mode - just show most recent frame
-            for name, img in images.items():
-                plt.clf()
-                plt.imshow(img)
-                plt.title(f"{name.capitalize()} Camera")
-                plt.axis('off')
-                plt.draw()
-                plt.pause(0.001)
-
-    @staticmethod
-    def _normalize_image(img: np.ndarray) -> np.ndarray:
-        """Normalize image to uint8 [0, 255] range."""
-        if img.dtype != np.uint8:
-            return (np.clip(img, 0.0, 1.0) * 255).astype(np.uint8)
-        return img
-
-    def reset(self):
-        """Reset step counter for new episode."""
-        self.step_counter = 0
+    def on_waypoint(self, frames: Dict[str, np.ndarray]) -> None:
+        """Write one frame per camera (sub-step granularity)."""
+        self._write_frame(frames)
 
     # ------------------------------------------------------------------
-    # Video recording
+    # Video pipeline
     # ------------------------------------------------------------------
 
-    def start_video(
+    def _start_video(
         self,
         episode_id: int,
         save_path: str,
@@ -145,50 +104,33 @@ class CameraRenderer:
         codec: str = "mp4v",
         static_record_width: int = 0,
         static_record_height: int = 0,
-    ):
-        """
-        Prepare video recording for an episode.
-
-        Writers are opened lazily on the first write_frame() call so that
-        frame dimensions are always derived from actual data (avoiding
-        mismatches when the env resizes gripper images to match static res).
-
-        Args:
-            episode_id: Episode index used in the output filename.
-            save_path: Directory where MP4 files will be written.
-            fps: Frames per second for the output video.
-            codec: FourCC codec string (e.g. 'mp4v', 'avc1').
-            static_record_width: Override width for static camera recording (0 = use frame width).
-            static_record_height: Override height for static camera recording (0 = use frame height).
-        """
+    ) -> None:
+        """Prepare video recording for an episode (writers open on first frame)."""
         if not _CV2_AVAILABLE:
-            logger.error("cv2 not available — video recording disabled. Install opencv-python.")
+            logger.error(
+                "cv2 not available — video recording disabled. Install opencv-python."
+            )
             return
 
-        self.stop_video()  # Release any open writers first
-
+        self._stop_video()  # release any open writers first
         self._video_save_path = Path(save_path)
         self._video_save_path.mkdir(parents=True, exist_ok=True)
         self._video_fps = fps
         self._video_codec = codec
         self._video_episode_id = episode_id
-        # None means "use native frame size"; set only when overrides are both nonzero
         if static_record_width > 0 and static_record_height > 0:
             self._static_record_size = (static_record_width, static_record_height)
         else:
             self._static_record_size = None
 
-    def _open_writer(self, cam_key: str, frame: np.ndarray) -> Optional[any]:
-        """
-        Open a cv2.VideoWriter for cam_key, sized to match the (possibly upscaled) frame.
-        Returns the writer, or None on failure.
-        """
+    def _open_writer(self, cam_key: str, frame: np.ndarray) -> Optional[Any]:
+        """Open a cv2.VideoWriter for `cam_key`, sized to match the frame."""
         if not _CV2_AVAILABLE or self._video_save_path is None:
             return None
 
         h, w = frame.shape[:2]
         if cam_key == "static" and self._static_record_size is not None:
-            w, h = self._static_record_size  # override dimensions for static cam
+            w, h = self._static_record_size
 
         filename = f"episode_{self._video_episode_id:04d}_{cam_key}.mp4"
         out_path = self._video_save_path / filename
@@ -201,17 +143,8 @@ class CameraRenderer:
         self._video_writer_sizes[cam_key] = (w, h)
         return writer
 
-    def write_frame(self, obs_rgb: Dict[str, np.ndarray]):
-        """
-        Write one frame per camera to the video writers.
-
-        Writers are opened on the first call using actual frame dimensions,
-        so there is no risk of size mismatch regardless of env preprocessing.
-
-        Args:
-            obs_rgb: Dict mapping camera keys ('static', 'gripper') to RGB arrays
-                     (uint8 or float32 [0,1]).  Matches Observation.rgb.
-        """
+    def _write_frame(self, obs_rgb: Dict[str, np.ndarray]) -> None:
+        """Write one frame per camera to the open video writers."""
         if self._video_save_path is None:
             return
 
@@ -220,7 +153,7 @@ class CameraRenderer:
                 continue
             frame = self._normalize_image(frame)
 
-            # Open writer lazily on first frame so dimensions come from actual data
+            # Open writer lazily on first frame so dimensions come from real data.
             if cam_key not in self._video_writers:
                 writer = self._open_writer(cam_key, frame)
                 if writer is None:
@@ -228,18 +161,16 @@ class CameraRenderer:
                 self._video_writers[cam_key] = writer
 
             writer = self._video_writers[cam_key]
-
-            # Resize to writer dimensions if needed (handles static upscale and
-            # any source inconsistency between initial obs and per-waypoint raw obs)
             writer_w, writer_h = self._video_writer_sizes[cam_key]
             if (frame.shape[1], frame.shape[0]) != (writer_w, writer_h):
-                frame = cv2.resize(frame, (writer_w, writer_h), interpolation=cv2.INTER_LANCZOS4)
+                frame = cv2.resize(
+                    frame, (writer_w, writer_h), interpolation=cv2.INTER_LANCZOS4
+                )
 
-            # cv2 expects BGR and uint8
             frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             writer.write(frame_bgr)
 
-    def stop_video(self):
+    def _stop_video(self) -> None:
         """Release all open video writers."""
         for cam_key, writer in self._video_writers.items():
             writer.release()
@@ -247,55 +178,25 @@ class CameraRenderer:
         self._video_writers.clear()
         self._video_writer_sizes.clear()
 
+    @staticmethod
+    def _normalize_image(img: np.ndarray) -> np.ndarray:
+        """Normalize to uint8 [0, 255]."""
+        if img.dtype != np.uint8:
+            return (np.clip(img, 0.0, 1.0) * 255).astype(np.uint8)
+        return img
+
     # ------------------------------------------------------------------
-    # Renderer Protocol adapters (Task 5 iter 1 — additive)
-    #
-    # The Protocol methods route through the existing legacy API so the
-    # rewrite of VisualizationManager can dispatch uniformly. The legacy
-    # methods (`start_video`, `write_frame`, `stop_video`, `reset`,
-    # `render_step`, `display_cameras`) are preserved untouched in iter 1.
-    # Iter 3 strips the image-saving + matplotlib display paths and renames
-    # this class to `VideoRecorder`.
+    # Legacy aliases — preserved through iter 2 for `run_experiment.py`'s
+    # `viz_manager.start_recording/record_step/stop_recording` deprecated
+    # paths. Iter 3 removes both these aliases and the Manager methods that
+    # call them.
     # ------------------------------------------------------------------
 
-    def update_state(self, state: dict) -> None:
-        """No-op — CameraRenderer reacts to lifecycle hooks (`on_episode_*`,
-        `on_waypoint`), not per-step state."""
-        # Stashed for future use (e.g. iter 3 may attach metadata to frames).
-        self._last_state = state
+    def start_video(self, **kwargs: Any) -> None:
+        self._start_video(**kwargs)
 
-    def tick(self) -> None:
-        """No-op — frames are written via `on_waypoint`, not `tick()`."""
-        pass
+    def write_frame(self, obs_rgb: Dict[str, np.ndarray]) -> None:
+        self._write_frame(obs_rgb)
 
-    def close(self) -> None:
-        """Flush any open video writers."""
-        self.stop_video()
-
-    def on_episode_start(self, episode_id: int, *, video_cfg=None) -> None:
-        """Start video recording for a new episode.
-
-        `video_cfg` is the resolved `VideoConfig` (the Manager passes it in
-        on dispatch). If omitted, the renderer falls back to its
-        constructor-time config (legacy path used by `Manager.start_recording`).
-        """
-        if video_cfg is None:
-            return  # legacy `Manager.start_recording` handles this path
-        if not video_cfg.enabled:
-            return
-        self.start_video(
-            episode_id=episode_id,
-            save_path=video_cfg.save_path,
-            fps=video_cfg.fps,
-            codec=video_cfg.codec,
-            static_record_width=video_cfg.static_record_width,
-            static_record_height=video_cfg.static_record_height,
-        )
-
-    def on_episode_end(self) -> None:
-        """Flush video writers at episode end."""
-        self.stop_video()
-
-    def on_waypoint(self, frames: dict) -> None:
-        """Write one frame per camera at sub-step (per-waypoint) granularity."""
-        self.write_frame(frames)
+    def stop_video(self) -> None:
+        self._stop_video()
