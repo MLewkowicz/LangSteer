@@ -283,6 +283,10 @@ class LMP:
         self._variable_vars = variable_vars
         self.exec_hist = ""
         self._context = None
+        # Task 7 Phase 2 expansion — runtime-injected scene text (state +
+        # VLM grounding). Prepended to the query for downstream LMPs
+        # (affordance / avoidance) that don't go through compose_with_repair.
+        self._scene_text: Optional[str] = None
 
     def clear_exec_hist(self):
         self.exec_hist = ""
@@ -308,18 +312,32 @@ class LMP:
         if self._cfg.get("include_context") and self._context is not None:
             prompt += f"\n{self._context}"
 
+        # Task 7 Phase 2 expansion — prepend scene text (state + VLM dict)
+        # to the query when set. Affordance / avoidance LMPs read this; the
+        # composer receives the same text via `compose_with_repair`'s
+        # `scene_context` kwarg, so no double-injection there.
         query_prefix = self._cfg.get("query_prefix", "# Query: ")
         query_suffix = self._cfg.get("query_suffix", ".")
-        user_query = f"{query_prefix}{query}{query_suffix}"
+        if self._scene_text:
+            user_query = f"{self._scene_text}\n{query_prefix}{query}{query_suffix}"
+        else:
+            user_query = f"{query_prefix}{query}{query_suffix}"
         prompt += f"\n{user_query}"
 
         return prompt, user_query
 
-    def __call__(self, query: str, **kwargs):
-        """Generate code for the query, execute it, and return the result."""
+    def __call__(self, query: str, image_bytes: Optional[bytes] = None, **kwargs):
+        """Generate code for the query, execute it, and return the result.
+
+        Task 7 Phase 2: `image_bytes` is threaded to the backend for multimodal
+        LMPs (currently only `scene_grounding`). Text-only LMPs leave it `None`
+        and the backend behaves identically to pre-Task-7.
+        """
         prompt, user_query = self.build_prompt(query)
 
-        code_str = self._backend.generate(prompt, self._stop_tokens)
+        code_str = self._backend.generate(
+            prompt, self._stop_tokens, image_bytes=image_bytes,
+        )
 
         if self._cfg.get("include_context") and self._context is not None:
             to_exec = f"{self._context}\n{code_str}"
@@ -333,8 +351,10 @@ class LMP:
         gvars = {**self._fixed_vars, **self._variable_vars}
         lvars = kwargs
 
-        # Non-composer LMPs return functions for lazy evaluation
-        if self._name not in ["composer", "planner"]:
+        # Non-composer LMPs return functions for lazy evaluation. Exceptions:
+        # composer (returns the stage list directly), planner (returns the
+        # task plan), and scene_grounding (Task 7 Phase 2 — returns a dict).
+        if self._name not in ["composer", "planner", "scene_grounding"]:
             to_exec = "def ret_val():\n" + to_exec.replace("ret_val = ", "return ")
             to_exec = to_exec.replace("\n", "\n    ")
 
@@ -426,6 +446,20 @@ DEFAULT_LMP_CONFIGS = {
         "query_suffix": ".",
         "maintain_session": True,
         "include_context": True,
+        "has_return": True,
+        "return_val_name": "ret_val",
+    },
+    "scene_grounding": {
+        # Task 7 Phase 2 — multimodal grounding LMP. Receives an annotated
+        # overhead JPEG via `image_bytes=` on the call site. Emits a dict
+        # with `blocks_visible` + `ambiguous_resolutions` (no fixtures_state
+        # per Phase 0 audit pivot — fixture state comes from scene_obs).
+        "prompt_fname": "scene_grounding_prompt",
+        "stop": ["# Query:"],
+        "query_prefix": "# Query: instruction = ",
+        "query_suffix": ", annotated scene.",
+        "maintain_session": False,
+        "include_context": False,
         "has_return": True,
         "return_val_name": "ret_val",
     },
@@ -663,11 +697,66 @@ def _build_repair_query(violations: list) -> str:
     return " ".join(parts)
 
 
+class GroundingValidationError(ValueError):
+    """Raised when the scene_grounding LMP emits an invalid grounding dict
+    (missing required keys, non-OBJECT_VOCAB tokens, etc.). Hard-fails the
+    episode same as VocabValidationError / ObjectResolutionError.
+    """
+    pass
+
+
+def format_scene_context(grounding: dict) -> str:
+    """Pretty-print the grounding dict as a Python comment block.
+
+    Task 7 Phase 2: this block is prepended to the composer's query so it
+    appears in the composer's exec history as `# Scene state` context. The
+    affordance LMPs read the raw dict via `self._lmp_interface._scene_context`.
+
+    Returns an empty string when `grounding` is None or empty.
+    """
+    if not grounding:
+        return ""
+    lines = ["# Scene state (from VLM grounding at episode start):"]
+    for k, v in grounding.items():
+        if isinstance(v, dict) and v:
+            lines.append(f"# {k}:")
+            for k2, v2 in v.items():
+                lines.append(f"#   {k2}: {v2!r}")
+        elif isinstance(v, dict):
+            lines.append(f"# {k}: {{}}")
+        else:
+            lines.append(f"# {k}: {v!r}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def validate_grounding(g: Any) -> list:
+    """Vocab-check a grounding dict. Returns list of violation strings."""
+    if not isinstance(g, dict):
+        return [f"top-level not a dict (got {type(g).__name__})"]
+    issues: list = []
+    bv = g.get("blocks_visible")
+    if not isinstance(bv, dict):
+        issues.append("missing or non-dict 'blocks_visible'")
+    else:
+        valid_buckets = {"table", "drawer_inside", "slider_inside", "held", "absent"}
+        for k, v in bv.items():
+            if k not in {"red_block", "blue_block", "pink_block"}:
+                issues.append(f"blocks_visible.{k}: unknown block color")
+            if v not in valid_buckets:
+                issues.append(f"blocks_visible.{k}: bucket {v!r} not in {sorted(valid_buckets)}")
+    ar = g.get("ambiguous_resolutions")
+    if not isinstance(ar, dict):
+        issues.append("missing or non-dict 'ambiguous_resolutions'")
+    return issues
+
+
 def compose_with_repair(
     composer: LMP,
     query: str,
     *,
     max_repromptings: int = 2,
+    scene_context: Optional[str] = None,
 ) -> Any:
     """Run the composer with a vocab-adherence linter and re-prompt loop.
 
@@ -683,8 +772,16 @@ def compose_with_repair(
 
     The disk cache keys by prompt text; each repair query has unique text,
     so cache integrity is preserved without manual invalidation.
+
+    Task 7 Phase 2: `scene_context` (an already-formatted comment block from
+    `format_scene_context(...)`) is prepended to the query so it appears in
+    the composer's prompt + cache key. Pass `None` for text-only composition
+    (cache behaves as pre-Task-7).
     """
-    raw_result = composer(query)
+    composed_query = (
+        f"{scene_context}\n{query}" if scene_context else query
+    )
+    raw_result = composer(composed_query)
     attempts = 0
     while attempts < max_repromptings:
         violations = _classify_violations(raw_result)
@@ -703,6 +800,8 @@ def compose_with_repair(
                 f"suggested={suggested!r}"
             )
         repair_query = _build_repair_query(violations)
+        if scene_context:
+            repair_query = f"{scene_context}\n{repair_query}"
         raw_result = composer(repair_query)
 
     violations = _classify_violations(raw_result)

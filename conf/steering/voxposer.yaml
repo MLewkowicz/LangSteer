@@ -171,3 +171,20 @@ workspace_bounds_max: [0.35, 0.15, 0.85]
 # `visualization.html.*` — the steering module no longer owns this. Enable
 # stage HTMLs via `visualization.html.enabled=true`; configure save_dir /
 # quality at `visualization.html.save_dir` / `visualization.html.quality`.)
+
+# Task 7 Phase 2 — VLM scene grounding. When `enabled=true`, the runner
+# captures an annotated overhead frame at episode start, sends it to the
+# `scene_grounding` LMP (gpt-5.4-mini per Phase 0 audit), and threads the
+# resulting dict as text context into the composer + affordance LMPs.
+# Output schema (narrowed per Phase 0 pivot):
+#     {'blocks_visible': {...}, 'ambiguous_resolutions': {...}}
+# Fixture state (drawer open/closed, slider position, lights) is NOT in
+# scope — it's read deterministically from scene_obs.
+scene_grounding:
+  enabled: false                # opt-in; default keeps text-only path
+  model: gpt-5.4-mini           # locked per Phase 0 audit
+  image_width: 600              # annotated frame size for VLM
+  image_height: 600
+  image_fov: 20.0               # degrees; matches Task 5's multistage default
+  annotate: true                # OBB + name overlay (identity + geometry only)
+  fallback_on_error: true       # on GroundingValidationError, fall back to text-only

@@ -217,10 +217,64 @@ def wire_steering(steering, policy, cfg):
         logger.info("Wired object-id callback: steering → policy.set_object")
 
 
-def setup_voxposer_episode(steering, env):
-    """Setup VoxPoser steering for a new episode (after env.reset)."""
+def _capture_scene_image(env, lmp_interface, sg_cfg) -> "bytes | None":
+    """Task 7 Phase 2 — capture an annotated overhead frame for the grounding LMP.
+
+    Returns JPEG bytes or None on any failure (caller falls back to text-only).
+    """
+    try:
+        from voxposer.scene_image import render_annotated_overhead
+        w = int(sg_cfg.get("image_width", 600))
+        h = int(sg_cfg.get("image_height", 600))
+        fov = float(sg_cfg.get("image_fov", 20.0))
+        rgb = env.render_high_res_static(w, h, fov=fov)
+        view_mat, proj_mat = env.get_static_camera_matrices(w, h, fov=fov)
+        if sg_cfg.get("annotate", True):
+            detections = lmp_interface.get_all_detections()
+            return render_annotated_overhead(rgb, detections, view_mat, proj_mat)
+        # Non-annotated mode: encode the raw frame as JPEG.
+        import io
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.fromarray(rgb).save(buf, format="JPEG", quality=85)
+        return buf.getvalue()
+    except Exception as e:
+        logger.warning(f"Scene image capture failed ({e}); falling back to text-only.")
+        return None
+
+
+def setup_voxposer_episode(steering, env, hydra_cfg=None):
+    """Setup VoxPoser steering for a new episode (after env.reset).
+
+    Task 7 Phase 2: when `cfg.steering.scene_grounding.enabled` is true,
+    captures an annotated overhead frame and passes it to the steering
+    module so the grounding LMP can ingest the scene visually. The frame
+    is captured BEFORE composer/value-map generation so the grounding dict
+    is available to the composer at stage-0 setup.
+    """
     state = env.get_scene_state()
     vp_instruction = env.task_description
+
+    scene_image = None
+    if hydra_cfg is not None:
+        sg_cfg = hydra_cfg.steering.get("scene_grounding", {})
+        if sg_cfg.get("enabled", False):
+            # Update the LMP interface FIRST so get_all_detections has fresh
+            # OBBs for the annotation overlay. The `lmp_interface` accessor
+            # lazy-initializes the LMP system on first call.
+            lmp_iface = steering.lmp_interface
+            lmp_iface.update_state(
+                state["robot_obs"], state["scene_obs"],
+                fixture_positions=state.get("fixture_positions"),
+                block_aabbs=state.get("block_aabbs"),
+            )
+            scene_image = _capture_scene_image(env, lmp_iface, sg_cfg)
+            if scene_image is not None:
+                logger.info(
+                    f"Captured scene image ({len(scene_image)} bytes) for "
+                    f"VLM grounding."
+                )
+
     steering.setup_episode(
         env._task_name,
         instruction=vp_instruction,
@@ -228,6 +282,7 @@ def setup_voxposer_episode(steering, env):
         scene_obs=state["scene_obs"],
         fixture_positions=state.get("fixture_positions"),
         block_aabbs=state.get("block_aabbs"),
+        scene_image=scene_image,
     )
     if steering._value_map is not None:
         logger.info(f"VoxPoser value maps generated for: '{vp_instruction}'")
@@ -394,7 +449,7 @@ def run_condition(
                 # Setup steering — composer + stage 0 activation may raise.
                 if steering is not None and hasattr(steering, "setup_episode"):
                     if hydra_cfg.steering.name == "voxposer":
-                        setup_voxposer_episode(steering, env)
+                        setup_voxposer_episode(steering, env, hydra_cfg)
 
                 # Visualization lifecycle: notify renderers + install
                 # per-waypoint frame capture hook for video.

@@ -248,6 +248,25 @@ def main(cfg: DictConfig) -> None:
                 # steering.instruction overrides the instruction used for value maps
                 # (independent from the policy instruction in env.task_description)
                 vp_instruction = cfg.steering.get('instruction', None) or env.task_description
+
+                # Task 7 Phase 2 — VLM scene grounding (opt-in).
+                scene_image = None
+                sg_cfg = cfg.steering.get('scene_grounding', {}) or {}
+                if sg_cfg.get('enabled', False):
+                    from scripts.run_evaluation import _capture_scene_image
+                    lmp_iface = steering.lmp_interface
+                    lmp_iface.update_state(
+                        state['robot_obs'], state['scene_obs'],
+                        fixture_positions=state.get('fixture_positions'),
+                        block_aabbs=state.get('block_aabbs'),
+                    )
+                    scene_image = _capture_scene_image(env, lmp_iface, sg_cfg)
+                    if scene_image is not None:
+                        logger.info(
+                            f"Captured scene image ({len(scene_image)} bytes) "
+                            f"for VLM grounding."
+                        )
+
                 steering.setup_episode(
                     env._task_name,
                     instruction=vp_instruction,
@@ -255,6 +274,7 @@ def main(cfg: DictConfig) -> None:
                     scene_obs=state['scene_obs'],
                     fixture_positions=state.get('fixture_positions'),
                     block_aabbs=state.get('block_aabbs'),
+                    scene_image=scene_image,
                 )
                 if steering._value_map is not None:
                     logger.info(f"Generated VoxPoser value maps for: '{vp_instruction}'")

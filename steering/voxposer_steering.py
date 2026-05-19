@@ -206,6 +206,20 @@ class VoxPoserSteering(BaseSteering):
         """
         self._stage_manager.set_object_callback(fn)
 
+    @property
+    def lmp_interface(self):
+        """Lazy-initialize the LMP system and return the CalvinLMPInterface.
+
+        Task 7 Phase 2 — the runner needs the interface BEFORE setup_episode
+        is called (to build the annotated overhead frame using
+        `get_all_detections()`). The interface is otherwise lazy-initialized
+        on the first setup_episode; this property triggers the init early
+        and caches the result.
+        """
+        if self._stage_manager._lmp_interface is None:
+            self._stage_manager._init_lmp_system()
+        return self._stage_manager._lmp_interface
+
     # ------------------------------------------------------------------
     # Per-step state setters (called by the policy wrapper)
     # ------------------------------------------------------------------
@@ -268,11 +282,16 @@ class VoxPoserSteering(BaseSteering):
         scene_obs: Optional[np.ndarray] = None,
         fixture_positions: Optional[dict] = None,
         block_aabbs: Optional[dict] = None,
+        scene_image: Optional[bytes] = None,
     ) -> tuple[None, None]:
         """Generate value maps for a new episode via the LLM composer.
 
         Returns (None, None) for compatibility with TweedieSteering's
         (robot_obs, scene_obs) two-tuple return.
+
+        Task 7 Phase 2: `scene_image` is forwarded to the stage_manager,
+        which calls the grounding LMP if non-None. Default `None` preserves
+        the pre-Task-7 text-only path.
         """
         self._episode_step = 0
         self._stage_manager.setup_episode(
@@ -282,6 +301,7 @@ class VoxPoserSteering(BaseSteering):
             scene_obs=scene_obs,
             fixture_positions=fixture_positions,
             block_aabbs=block_aabbs,
+            scene_image=scene_image,
         )
         return None, None
 

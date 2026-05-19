@@ -1,0 +1,20 @@
+# Task 7 Phase 2 smoke — scene_grounding.enabled=false (default).
+# Verifies byte-identical behavior to Phase 1 ship state when grounding
+# is off.
+
+condition_name: "Task7 Phase 2 (grounding off)"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/task7_phase2_off_cache
+
+tasks:
+  - open_drawer
