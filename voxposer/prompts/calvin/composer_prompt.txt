@@ -1,0 +1,279 @@
+import numpy as np
+from perception_utils import parse_query_obj
+from plan_utils import get_affordance_map, get_avoidance_map
+
+# Each stage tuple has one of two forms:
+#     (aff_fn, avoid_fn, mode, primitive, object)               # 5-tuple, no rotation
+#     (aff_fn, avoid_fn, rot_target, mode, primitive, object)   # 6-tuple with rotation
+#
+# Valid primitives (must be exactly one of):
+#     grasp, push, pull, place, rotate
+# Valid objects (must be exactly one of):
+#     block, blue_block, drawer_handle, led_button,
+#     lightbulb_switch, pink_block, red_block, slider_handle
+#
+# Disambiguation:
+#   - Cabinet door / sliding panel handle = slider_handle. There is NO 'door_handle'.
+#   - Drawer pull bar = drawer_handle.
+#   - Green light / LED = led_button (the button that toggles the LED).
+#   - Yellow light / lightbulb = lightbulb_switch (the lever that toggles the bulb).
+#
+# STAGE 0 OBJECT MUST BE A SPECIFIC BLOCK COLOR:
+#   When stage 0 acts on a block, the object slot MUST be one of
+#   `red_block`, `blue_block`, or `pink_block` — NEVER the generic `block`.
+#   Generic `block` at stage 0 has no resolvable position (no held block to
+#   fall back to) and will raise ObjectResolutionError. Stage ≥1 may use
+#   `block` only when a prior stage's grasp produced a held block (the
+#   held-block fallback in `_detect_object` then resolves it).
+#
+# LIFT STAGING — branches by source location:
+#
+#   LIFTS FROM THE TABLE MUST EMIT 2 STAGES:
+#     Stage 1: (track, grasp, <block>)  — affordance at the block's current centroid.
+#     Stage 2: (static, grasp, <block>) — affordance ~15cm above the block's start.
+#   This applies even when the instruction says only "pick up X" or "lift X".
+#   The second stage provides the lift trajectory target; without it the
+#   policy has no spatial reason to translate upward once the block is grasped.
+#
+#   LIFTS FROM A CAVITY (drawer interior, slider interior) MAY EMIT 1 STAGE:
+#     Stage 1: (track, grasp, <block>)  — affordance at the block's centroid.
+#   The cavity geometry already constrains the lift trajectory; an explicit
+#   second 'above the block' stage over-specifies (the target sits inside
+#   the same cavity volume) and empirically regresses these tasks. Use the
+#   1-stage form when the block's source is `*_slider` or `*_drawer`.
+#
+# Field semantics:
+#   aff_fn / avoid_fn — affordance and avoidance map callables (or None).
+#   rot_target — None (no rotation guidance) OR a 3x3 world-frame rotation matrix
+#                built from rotation_about_axis(axis, angle_deg), optionally
+#                composed with current_ee_rotation(). When non-None, the steering
+#                module nudges the predicted wrist rotation toward this target.
+#                Use ONLY for tasks where wrist orientation matters (rotate_*);
+#                leave None otherwise.
+#   mode      — 'track' (re-evaluated each refresh — affordance follows a moving
+#               object) or 'static' (frozen at activation — for spatial offsets
+#               like "Ncm to the left of X").
+#   primitive — gripper-state instruction the base policy is conditioned on.
+#   object    — object the policy should attend to for this stage. Every stage
+#               MUST carry an object — the parser drops stages that omit it.
+#
+# THE STEERING / PRIMITIVE / POLICY SPLIT (read before composing):
+#
+# - Steering writes guidance into the POSITION dims and (optionally) the ROTATION
+#   dims of the predicted trajectory. The primitive id is gripper state. Therefore:
+#   anywhere you want the EE to TRANSLATE to a new place, add a steering stage
+#   with an affordance at that place. Anywhere you need a specific wrist
+#   ORIENTATION (rotate_* tasks), add a stage with rot_target set.
+#
+# - 'grasp' as a primitive label spanning multiple stages just means "keep the
+#   gripper closed". It does NOT mean the policy has memorized any post-grasp
+#   motion. So lift and place-after-grasp tasks need an explicit second
+#   affordance stage providing the spatial target.
+#
+# - For rotate_* tasks, build the target wrist rotation with
+#   rotation_about_axis('z', ±90) composed in the WORLD frame, NOT the gripper's
+#   body frame. CALVIN's success oracle checks the block's WORLD-frame Euler-z
+#   rotation and rejects any motion with significant world x/y tilt. World-frame
+#   rotation is invariant to the gripper's current pose, so it stays clean.
+#
+#   ALWAYS use this idiom:
+#     rot_target = compose_rotation(rotation_about_axis('z', 90), current_ee_rotation())
+#   The Rz comes FIRST in compose_rotation (left-multiplication = world frame).
+#   For rotate_*_left use +90°, for rotate_*_right use -90°.
+#
+#   NEVER use the body-frame composition
+#     compose_rotation(current_ee_rotation(), rotation_about_axis(...))
+#   for rotate tasks — it produces a body-frame roll that becomes a wrong-sign
+#   world-z yaw (gripper points down → body-z = -world-z) and any gripper tilt
+#   smears the rotation into world x/y, which the oracle penalizes.
+#
+#   ROTATE IS NOT A LIFT. Both stages of a rotate task use the SAME spatial
+#   affordance (the block center). DO NOT translate the EE upward in stage 2;
+#   the orientation change comes ONLY from rot_target. If you find yourself
+#   writing 'a point 15cm above the X' for a rotate task, you are wrong.
+#
+# CONTACT-PHYSICS PRIORS:
+#
+# - For graspable objects (any of the colored blocks), PREFER grasp → place over
+#   2-stage push. Grasp+place is more reliable because the object travels rigidly
+#   with the gripper; sustained-contact pushing depends on accurate contact pose.
+#
+# - 2-stage push is the right pattern when the object is NOT graspable (handles,
+#   levers, sliders, drawer faces). Stage 1 = APPROACH pose on the side OPPOSITE
+#   the desired motion direction; stage 2 = DRIVE-THROUGH pose past the centroid
+#   in the direction of motion. Both stages get primitive='push'.
+#
+# - Single-stage push is ONLY correct for vertical pokes (button press): contact
+#   direction is colinear with the approach direction, so no approach phase.
+#
+# - 'pull' mirrors push for retraction-along-axis tasks (opening drawers, pulling
+#   sliders open): approach the contact point first (grasp), then retract.
+#
+# The composer's job is to produce 1-3 stages per query. Most graspable-object
+# manipulations are 2 stages; chained manipulations are 3.
+
+# Query: engage and pull the cabinet drawer open.
+# Canonical 2-stage grasp → pull on a pull-bar handle. The same object persists
+# across both stages — the policy attends to the handle the entire time; only
+# the gripper state changes.
+movable = parse_query_obj('gripper')
+stage1_aff = get_affordance_map('a point at the center of the drawer handle')
+stage2_aff = get_affordance_map('a point 15cm in front of the drawer handle')
+ret_val = [
+    (stage1_aff, None, 'track', 'grasp', 'drawer_handle'),
+    (stage2_aff, None, 'static', 'pull',  'drawer_handle'),
+]
+
+# Query: nudge the sliding panel sideways.
+# 2-stage push on a non-graspable handle: approach from the side OPPOSITE the
+# motion direction, then drive through past the centroid.
+movable = parse_query_obj('gripper')
+stage1_aff = get_affordance_map('a point 7cm to the right of the slider handle')
+stage2_aff = get_affordance_map('a point 12cm to the left of the slider handle')
+ret_val = [
+    (stage1_aff, None, 'static', 'push', 'slider_handle'),
+    (stage2_aff, None, 'static', 'push', 'slider_handle'),
+]
+
+# Query: push the brick over to a new spot on the table.
+# When a CALVIN instruction says 'push' / 'slide' / 'shove' a BLOCK (e.g.
+# "push the red block to the right", "slide the blue block left"), use
+# grasp → place — NOT 2-stage push. The block travels rigidly with the gripper,
+# which is much more reliable than sustained-contact pushing on a 5cm cube.
+# 2-stage push is reserved for non-graspable objects (handles, sliders, levers).
+movable = parse_query_obj('gripper')
+stage1_aff = get_affordance_map('a point at the center of the red block')
+stage2_aff = get_affordance_map('a point 15cm to the right of the red block')
+ret_val = [
+    (stage1_aff, None, 'track', 'grasp', 'red_block'),
+    (stage2_aff, None, 'static', 'place', 'red_block'),
+]
+
+# Query: raise the brick straight up off the surface.
+# Lift = grasp then grasp. Both stages share 'grasp' (gripper stays closed
+# throughout). Stage 1 closes on the block; stage 2 provides a spatial target
+# above the block so the EE has a reason to translate up after closing.
+movable = parse_query_obj('gripper')
+stage1_aff = get_affordance_map('a point at the center of the pink block')
+stage2_aff = get_affordance_map('a point 15cm above the pink block')
+ret_val = [
+    (stage1_aff, None, 'track', 'grasp', 'pink_block'),
+    (stage2_aff, None, 'static', 'grasp', 'pink_block'),
+]
+
+# Query: tap the dome to chime.
+# Vertical poke — the only valid single-stage push. Contact direction matches
+# approach direction, so no approach phase is needed.
+movable = parse_query_obj('gripper')
+affordance_map = get_affordance_map('a point at the button')
+ret_val = [(affordance_map, None, 'track', 'push', 'led_button')]
+
+# Query: flick a wall lever upward.
+# 2-stage push for a tilted toggle lever. Approach from below the lever, drive
+# up past it. Mirror the affordances (above → below) for a downward flick.
+movable = parse_query_obj('gripper')
+stage1_aff = get_affordance_map('a point 5cm below the light switch')
+stage2_aff = get_affordance_map('a point 7cm above the light switch')
+ret_val = [
+    (stage1_aff, None, 'static', 'push', 'lightbulb_switch'),
+    (stage2_aff, None, 'static', 'push', 'lightbulb_switch'),
+]
+
+# ============================================================================
+# ROTATE TASKS — wrist rotation in place, NOT a lift. Critical distinctions:
+#   - Both stages share the SAME spatial affordance (block center).
+#   - DO NOT add an 'above the block' affordance — that would turn rotate into
+#     a lift. Orientation change comes ONLY from rot_target.
+#   - Both stages use 'grasp' so the gripper holds throughout.
+# ============================================================================
+
+# Query: twist the brick 90° counterclockwise (left, from above).
+# World-frame +90° about world Z. Stage 1 grasps the block; stage 2 applies the
+# rotation while still holding (primitive='rotate'). For a 90° clockwise (right)
+# twist, mirror with rotation_about_axis('z', -90).
+movable = parse_query_obj('gripper')
+stage1_aff = get_affordance_map('a point at the center of the red block')
+stage2_aff = get_affordance_map('a point at the center of the red block')
+rot_target = compose_rotation(rotation_about_axis('z', 90), current_ee_rotation())
+ret_val = [
+    (stage1_aff, None, 'track', 'grasp', 'red_block'),
+    (stage2_aff, None, rot_target, 'track', 'rotate', 'red_block'),
+]
+
+# Query: stack one brick on top of another.
+# Standard grasp → place. ALWAYS emit specific block colors in the object slot
+# (never generic 'block'): stage 0 grasps a specific color, stage 1 places onto
+# another specific color. The composer must pick concrete colors based on scene
+# context or the instruction. Generic 'block' at stage 0 will fail to resolve
+# (no object position) — emit the held color for stage 0 and the target color
+# for stage 1.
+movable = parse_query_obj('gripper')
+stage1_aff = get_affordance_map('a point at the center of the blue block')
+stage2_aff = get_affordance_map('a point 5cm above the red block')
+ret_val = [
+    (stage1_aff, None, 'track', 'grasp', 'blue_block'),
+    (stage2_aff, None, 'static', 'place', 'red_block'),
+]
+
+# Query: lift the blue block from the drawer.
+# 1-stage cavity lift (drawer source). The blue block sits inside the
+# drawer interior; the cavity constrains the lift trajectory so an explicit
+# 'above the block' stage is unnecessary and empirically regressive.
+# Compare with `lift_red_block_table` which uses the 2-stage form because
+# the table source has no cavity geometry to constrain the lift.
+movable = parse_query_obj('gripper')
+stage1_aff = get_affordance_map('a point at the center of the blue block')
+ret_val = [
+    (stage1_aff, None, 'track', 'grasp', 'blue_block'),
+]
+
+# Query: push a brick into the open drawer.
+# 2-stage grasp → place: pick up the block, then carry it over the drawer mouth
+# (above the drawer's interior). Always emit a specific block color — generic
+# 'block' will not resolve. The drawer is the place destination's geometric
+# reference, not an object to grasp.
+movable = parse_query_obj('gripper')
+stage1_aff = get_affordance_map('a point at the center of the pink block')
+stage2_aff = get_affordance_map('a point 5cm above the drawer handle')
+ret_val = [
+    (stage1_aff, None, 'track', 'grasp', 'pink_block'),
+    (stage2_aff, None, 'static', 'place', 'pink_block'),
+]
+
+# Query: move a brick to a different spot while keeping clear of another brick.
+# Avoidance attaches to the *transport* stage where the held block travels
+# through the workspace. The strategy is still grasp → place (per the
+# contact-physics priors for graspable blocks); avoidance is layered on top
+# of the place stage to route around the obstacle.
+movable = parse_query_obj('gripper')
+stage1_aff = get_affordance_map('a point at the center of the red block')
+stage2_aff = get_affordance_map('a point 15cm to the right of the red block')
+avoidance_map = get_avoidance_map('10cm from the blue block')
+ret_val = [
+    (stage1_aff, None, 'track', 'grasp', 'red_block'),
+    (stage2_aff, avoidance_map, 'static', 'place', 'red_block'),
+]
+
+# Query: rotate blue_block.
+# Structured-form query: the user passes (primitive, object) as a 2-token string.
+# Same task as 'twist the brick 90° counterclockwise' on blue_block — default
+# to +90° world-frame yaw when no direction is specified.
+movable = parse_query_obj('gripper')
+stage1_aff = get_affordance_map('a point at the center of the blue block')
+stage2_aff = get_affordance_map('a point at the center of the blue block')
+rot_target = compose_rotation(rotation_about_axis('z', 90), current_ee_rotation())
+ret_val = [
+    (stage1_aff, None, 'track', 'grasp', 'blue_block'),
+    (stage2_aff, None, rot_target, 'track', 'rotate', 'blue_block'),
+]
+
+# Query: pull drawer_handle.
+# Structured-form query: same task as 'engage and pull the cabinet drawer open'
+# — grasp the handle, then retract along the drawer's pull axis.
+movable = parse_query_obj('gripper')
+stage1_aff = get_affordance_map('a point at the center of the drawer handle')
+stage2_aff = get_affordance_map('a point 15cm in front of the drawer handle')
+ret_val = [
+    (stage1_aff, None, 'track', 'grasp', 'drawer_handle'),
+    (stage2_aff, None, 'static', 'pull',  'drawer_handle'),
+]

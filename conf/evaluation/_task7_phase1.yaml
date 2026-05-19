@@ -1,0 +1,22 @@
+# Task 7 Phase 1 canary — clone of langsteer_primitive_object.yaml with
+# a fresh cache (composer prompt changed in Phase 1; old cache stale).
+
+condition_name: "Task7 Phase 1 (composer fixes)"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/task7_phase1_cache
+
+tasks:
+  - stack_block
+  - push_into_drawer
+  - lift_blue_block_slider
+  - lift_red_block_drawer
