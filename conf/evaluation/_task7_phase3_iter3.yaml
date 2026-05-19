@@ -1,0 +1,27 @@
+# Task 7 Phase 3 iter 3 canary — clean VLM-grounding-alone baseline.
+# Per user direction (2026-05-19): deterministic scene_state injection
+# REMOVED. VLM is sole source of scene perception. Composer + affordance
+# prompts reverted to Phase 1.5 ship state (preambles only, no Phase 3
+# examples). Fresh cache.
+
+condition_name: "Task7 Phase 3 iter 3 (VLM-only, no scene_state injection)"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/task7_phase3_iter3_cache
+  scene_grounding.enabled: true
+
+tasks:
+  - stack_block
+  - push_into_drawer
+  - lift_blue_block_slider
+  - lift_red_block_drawer
+  - place_in_slider

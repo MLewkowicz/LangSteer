@@ -153,12 +153,150 @@ new accuracy estimate clears the 70% bar with the current model + prompt.
 
 ---
 
-## Phase 1 — _(pending Phase 0 sign-off)_
+### Phase 2 residuals (documented, not blocking)
 
-## Phase 2 — _(pending)_
+- **Held-block detection in `format_scene_state`.** The helper uses
+  z-bucket fallbacks (z<0.42→drawer_inside, y>0.05+z>0.5→slider_inside,
+  else→table). A block elevated by the gripper (z>0.55) currently
+  buckets as `slider_inside`. The VLM grounding dict's `blocks_visible`
+  field covers the "held" bucket via the visual path, so the gap is
+  benign for the canary scope. A future Phase 2.5 could wire
+  `_block_aabbs` + `robot_obs[6]` (gripper width) into the helper for
+  full deterministic held-block detection.
+- **Runtime malformed-VLM canary skipped.** Unit-level
+  `validate_grounding` smoke covers the schema-validation path; the
+  hard-fail / fallback branches in `stage_manager.setup_episode` are
+  exercised by code review only, not by a degenerate-prompt runtime
+  canary. Team-lead OK on this scope per Phase 2 close brief.
 
-## Phase 3 — _(pending)_
+## Phase 1 — Task-4 deferred composer fixes (text-only)
 
-## Phase 4 — _(pending)_
+Shipped `2434d68`. Composer prompt edits:
+- Specific-color stage-0 rule (no generic `'block'` at stage 0).
+- Cavity lift relaxation (`LIFTS FROM TABLE` 2-stage; `LIFTS FROM CAVITY` 1-stage).
+- New `lift the blue block from the drawer` in-context example.
+
+Canary (4 tasks × 3 ep, fresh `/tmp/task7_phase1_cache`):
+| Task | Phase 1 | Task 4 baseline |
+|---|---|---|
+| stack_block | 0/3 | 0/2 (matched) |
+| push_into_drawer | **2/3** | 0/2 hard-fail (improved) |
+| lift_blue_block_slider | **3/3** | 1/3 (improved) |
+| lift_red_block_drawer | 2/3 | 2/3 (matched) |
+
+0 ObjectResolutionError, 0 generic-`block` emissions. Acceptance ✓.
+
+## Phase 1.5 — context preambles
+
+Shipped `fc95aa7`. Added `# TASK PURPOSE` preambles to composer + affordance
++ avoidance + scene_grounding prompts. Composer preamble specifically calls
+out the disambiguation pattern ("Close it" → drawer-handle when drawer is
+open).
+
+## Phase 2 — VLM plumbing + scene_obs injection
+
+Shipped `08503b9`. LLMBackend multimodal extension, `scene_grounding` LMP
+factory entry with narrowed schema, `format_scene_state(scene_obs)` helper,
+frame capture wired in `setup_voxposer_episode`. Lazy-eval fix:
+`LMP.__call__` exclusion list now includes `scene_grounding`.
+
+Phase 2 smoke (`open_drawer` 1×1):
+- `enabled=false`: 1/1 success, 0 scene_grounding log lines — byte-identical
+  to Phase 1 baseline.
+- `enabled=true`: 1/1 success, VLM grounding called, composer prompt
+  showed both `# Current scene state` (from `format_scene_state`) AND
+  `# Scene state (from VLM grounding)` blocks.
+
+## Phase 3 — wire scene-grounding USE into composer + affordance
+
+Three iterations. Final iter 3 ships per user direction (2026-05-19):
+**remove deterministic `scene_state` injection entirely; VLM is sole
+source of scene perception.**
+
+### Iter 1 — initial Phase 3 examples (NOT SHIPPED)
+
+Added 2 composer examples + 1 affordance example. 5×3 canary:
+| Task | Phase 1 | Iter 1 |
+|---|---|---|
+| stack_block | 0/3 | 1/3 (+1) |
+| push_into_drawer | 2/3 | **1/3** (regression) |
+| lift_blue_block_slider | 3/3 | 3/3 |
+| lift_red_block_drawer | 2/3 | 2/3 |
+| place_in_slider | 0/3 | **0/3** (gate missed) |
+
+**Two gates missed.** Root causes per log audit:
+1. VLM `ambiguous_resolutions['the block']` → red_block (not Phase 1's
+   load-bearing pink_block). Policy weaker on red+blue contact geometry
+   for push_into_drawer.
+2. My new "outer edge of slider interior" affordance pattern triggers,
+   but `y - cm2index(8)` moves AWAY from cabinet (cavity interior is at
+   HIGHER y); affordance lands in empty air in front of cabinet.
+
+### Iter 2 — A+B refinements (NOT SHIPPED)
+
+Per team-lead direction: precision rule on `ambiguous_resolutions` +
+swap cavity-lift example for `place_in_slider` example. Same canary:
+| Task | Iter 1 | Iter 2 |
+|---|---|---|
+| stack_block | 1/3 | 0/3 |
+| push_into_drawer | 1/3 | **0/3** (worse) |
+| lift_blue_block_slider | 3/3 | 3/3 |
+| lift_red_block_drawer | 2/3 | 2/3 |
+| place_in_slider | 0/3 | **0/3** |
+
+Both gates still failed; overall 5/15 (worse than iter 1's 7/15).
+Precision rule didn't help push_into_drawer because the instruction's
+"the block" IS ambiguous — composer correctly used VLM ambig
+(pointing at red_block) per the rule. Cavity affordance still
+geometrically wrong.
+
+### Iter 3 (SHIPPED) — VLM-only, no scene_state injection
+
+User direction: drop the deterministic `format_scene_state` injection
+entirely. `scene_obs` is privileged simulator info; injecting it as text
+into the composer bypasses the VLM-as-perception premise and isn't
+defensible for real-deployment claims.
+
+**Code patch (`steering/stage_manager.py`):** removed the
+`format_scene_state(scene_obs)` call + `combined_scene_text` merge.
+Composer + affordance/avoidance LMPs now receive ONLY the VLM grounding
+dict's formatted text (or `None`). `format_scene_state` helper kept in
+`voxposer/calvin_interface.py` for future opt-in but no callers remain.
+
+**Prompts reverted to Phase 1.5 ship state** via `git checkout` of the
+iter 2 edits. No Phase 3 examples, no precision rule.
+
+Canary (5 tasks × 3 ep, fresh `/tmp/task7_phase3_iter3_cache`,
+scene_grounding=on):
+| Task | Phase 1 | Iter 3 | Δ |
+|---|---|---|---|
+| stack_block | 0/3 | 0/3 | matched |
+| push_into_drawer | **2/3** | **0/3** | **−2 regression** |
+| lift_blue_block_slider | 3/3 | 3/3 | matched |
+| lift_red_block_drawer | 2/3 | **3/3** | **+1 improvement** |
+| place_in_slider | 0/3 | 0/3 | matched |
+| OVERALL | 7/15 | **6/15** | −1 |
+
+**Log audit:** 0 `# Current scene state` lines (deterministic block
+gone ✓), 39 `# Scene state (from VLM grounding)` lines (VLM grounding
+still active across composer + affordance + avoidance prompts).
+
+### Phase 3 interpretation (per team-lead's decision tree)
+
+Maps to "push_into_drawer drops" branch: VLM ambig is net-harmful for
+unambiguous canonical instructions where Phase 1's hardcoded color was
+already correct. Lift_red_block_drawer improved unexpectedly (likely VLM
+`blocks_visible` voting blue→drawer caused composer to pick a different
+trajectory shape; or N=3 noise). place_in_slider unchanged from 0/3
+baseline — VLM grounding alone doesn't unlock cavity targets without a
+geometrically-correct affordance pattern (out of Task 7 scope per
+team-lead).
+
+**Aggregate VLM-on signal: weakly net-negative (-1 ep) but with clear
+"hurt push_into_drawer, helped lift_red_drawer" split.** Suggests
+per-task VLM toggling could net positive overall — escalate to user for
+Phase 5 design call.
+
+## Phase 4 — _(pending Phase 3 close + Phase 5 design)_
 
 ## Phase 5 — _(pending)_

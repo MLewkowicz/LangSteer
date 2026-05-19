@@ -39,9 +39,7 @@ from steering.stage_spec import (
     normalize_rot_target,
     parse_composer_stages,
 )
-from voxposer.calvin_interface import (
-    ObjectResolutionError, format_scene_state, pc2voxel, voxel2pc,
-)
+from voxposer.calvin_interface import ObjectResolutionError, pc2voxel, voxel2pc
 from voxposer.lmp import (
     VocabValidationError,
     compose_with_repair,
@@ -218,11 +216,15 @@ class StageManager:
         object_names = self._lmp_interface.get_object_names()
         set_lmp_objects(self._lmps, object_names)
 
-        # Task 7 Phase 2 expansion — deterministic scene state from scene_obs.
-        # Lands in BOTH composer + affordance prompts. Independent of VLM
-        # grounding (which handles visual disambig only). Empty when no
-        # scene_obs available (e.g. pure unit-test setup).
-        scene_state_text = format_scene_state(scene_obs) if scene_obs is not None else ""
+        # Task 7 Phase 3 iter 3 — VLM is the SOLE source of scene perception
+        # for downstream LMPs. The deterministic `format_scene_state(scene_obs)`
+        # injection was removed (user direction 2026-05-19): scene_obs is
+        # privileged simulator info; injecting it into the composer bypasses
+        # the VLM-as-perception premise and isn't defensible for real-
+        # deployment claims. `format_scene_state` is kept in
+        # `voxposer/calvin_interface.py` for future opt-in but is no longer
+        # called here. Fixture-state P4 cases ("close it", "open it") are
+        # a documented residual gap.
 
         # Task 7 Phase 2 — run scene grounding LMP if image provided + LMP exists.
         scene_ctx_text: Optional[str] = None
@@ -262,28 +264,21 @@ class StageManager:
                 self._lmp_interface.set_scene_context(grounding)
                 scene_ctx_text = format_scene_context(grounding)
 
-        # Combine scene-state (deterministic) + scene-grounding (VLM) blocks.
-        # Composer + affordance LMPs both read this.
-        combined_scene_text = scene_state_text
-        if scene_ctx_text:
-            combined_scene_text = (
-                f"{combined_scene_text}\n{scene_ctx_text}"
-                if combined_scene_text
-                else scene_ctx_text
-            )
-        # Stash on each affordance/avoidance LMP so they prepend it to their
-        # own prompts (the composer receives it via the `scene_context`
-        # kwarg below).
+        # Stash VLM grounding text on each affordance/avoidance LMP so they
+        # prepend it to their own prompts (the composer receives it via the
+        # `scene_context` kwarg below). `None` when grounding wasn't run or
+        # produced an invalid dict — downstream LMPs then build prompts as
+        # pre-Task-7.
         for name in ("get_affordance_map", "get_avoidance_map"):
             if name in self._lmps:
-                self._lmps[name]._scene_text = combined_scene_text or None
+                self._lmps[name]._scene_text = scene_ctx_text or None
 
         logger.info(f"Running VoxPoser composer for: '{instruction}'")
         try:
             result = compose_with_repair(
                 self._lmps["composer"],
                 instruction,
-                scene_context=combined_scene_text or None,
+                scene_context=scene_ctx_text or None,
             )
         except (VocabValidationError, ObjectResolutionError):
             # Hard fail — surface vocab-exhausted / object-unresolvable cases
