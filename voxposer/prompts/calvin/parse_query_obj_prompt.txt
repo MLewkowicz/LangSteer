@@ -1,0 +1,75 @@
+import numpy as np
+from perception_utils import detect
+
+objects = ['red block', 'blue block', 'pink block']
+# Query: gripper.
+gripper = detect('gripper')
+ret_val = gripper
+
+objects = ['red block', 'blue block', 'pink block', 'drawer', 'slider']
+# Query: red block.
+red_block = detect('red block')
+ret_val = red_block
+
+objects = ['red block', 'blue block', 'pink block', 'drawer', 'slider']
+# Query: drawer handle.
+drawer_handle = detect('drawer_handle')
+ret_val = drawer_handle
+
+objects = ['red block', 'blue block', 'pink block', 'drawer', 'slider']
+# Query: table.
+table = detect('table')
+ret_val = table
+
+objects = ['red block', 'blue block', 'pink block', 'lightbulb', 'led']
+# Query: lightbulb.
+lightbulb = detect('lightbulb')
+ret_val = lightbulb
+
+objects = ['red block', 'blue block', 'pink block', 'slider']
+# Query: slider.
+slider = detect('slider')
+ret_val = slider
+
+objects = ['red block', 'blue block', 'pink block', 'button', 'led']
+# Query: button.
+button = detect('button')
+ret_val = button
+
+objects = ['red block', 'blue block', 'pink block']
+# Query: block closest to the slider.
+red_block = detect('red block')
+blue_block = detect('blue block')
+pink_block = detect('pink block')
+slider = detect('slider')
+blocks = [red_block, blue_block, pink_block]
+distances = [np.linalg.norm(np.array(b.position) - np.array(slider.position)) for b in blocks]
+closest_block = blocks[np.argmin(distances)]
+ret_val = closest_block
+
+objects = ['red block', 'blue block', 'pink block']
+# Query: leftmost block.
+red_block = detect('red block')
+blue_block = detect('blue block')
+pink_block = detect('pink block')
+blocks = [red_block, blue_block, pink_block]
+# leftmost means smallest x coordinate (x goes left to right)
+x_positions = [b.position[0] for b in blocks]
+leftmost_block = blocks[np.argmin(x_positions)]
+ret_val = leftmost_block
+
+objects = ['red block', 'blue block', 'pink block', 'lightbulb', 'switch']
+# Query: light switch.
+light_switch = detect('light_switch')
+ret_val = light_switch
+
+objects = ['red block', 'blue block', 'pink block', 'button', 'led']
+# Query: black button.
+button = detect('button')
+ret_val = button
+
+objects = ['red block', 'blue block', 'pink block']
+# Query: green block.
+# No exact match; detect the closest available object type.
+red_block = detect('red block')
+ret_val = red_block

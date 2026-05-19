@@ -16,7 +16,7 @@ steering: voxposer
 
 steering_overrides:
   loop_back_on_last_stage: true
-  last_stage_dwell_steps: 15
+  cache_dir: /tmp/task3b_final_28x5_v3
 
 # All 34 CALVIN tasks
 tasks:

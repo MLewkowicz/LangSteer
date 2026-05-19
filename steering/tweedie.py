@@ -86,7 +86,9 @@ class TweedieSteering(BaseSteering):
         self.current_episode_step = 0
 
         if self.trajectory_loader is None:
-            logger.warning("No trajectory loader set, steering disabled for this episode")
+            logger.warning(
+                "No trajectory loader set, steering disabled for this episode"
+            )
             self.reference_trajectory = None
             return None, None
 
@@ -105,7 +107,7 @@ class TweedieSteering(BaseSteering):
             f"shape={self.reference_trajectory.shape}"
         )
 
-        return trajectory_data['robot_obs_init'], trajectory_data['scene_obs_init']
+        return trajectory_data["robot_obs_init"], trajectory_data["scene_obs_init"]
 
     def _setup_reference(self, trajectory_data):
         """
@@ -126,7 +128,7 @@ class TweedieSteering(BaseSteering):
             convert_rotation,
         )
 
-        robot_obs = trajectory_data['robot_obs']  # (T, 15)
+        robot_obs = trajectory_data["robot_obs"]  # (T, 15)
         abs_pos = robot_obs[:, :3]  # (T, 3) absolute XYZ
         euler_xyz = robot_obs[:, 3:6]  # (T, 3) euler XYZ
 
@@ -142,9 +144,9 @@ class TweedieSteering(BaseSteering):
         rot_6d = get_ortho6d_from_rotation_matrix(rot_matrices)  # (T, 6)
 
         abs_pos_t = torch.from_numpy(abs_pos).float()
-        self.reference_trajectory = torch.cat(
-            [abs_pos_t, rot_6d], dim=-1
-        ).to(self.device)
+        self.reference_trajectory = torch.cat([abs_pos_t, rot_6d], dim=-1).to(
+            self.device
+        )
 
         logger.debug(
             f"Reference: pos range "
@@ -155,8 +157,13 @@ class TweedieSteering(BaseSteering):
         """Advance the sliding window by one step."""
         self.current_episode_step += 1
 
-    def get_guidance(self, current_sample: torch.Tensor, timestep: int,
-                     obs_embedding: Any, model_output: torch.Tensor) -> torch.Tensor:
+    def get_guidance(
+        self,
+        current_sample: torch.Tensor,
+        timestep: int,
+        obs_embedding: Any,
+        model_output: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Compute Tweedie guidance gradient toward reference trajectory.
 
@@ -205,20 +212,34 @@ class TweedieSteering(BaseSteering):
         )
 
         # Tweedie: predict x_0 from x_t and epsilon
-        eps_pos = model_output[:, :self.horizon, :3]
-        eps_rot = model_output[:, :self.horizon, 3:9]
-        x_t_pos = current_sample[:, :self.horizon, :3]
-        x_t_rot = current_sample[:, :self.horizon, 3:9]
+        eps_pos = model_output[:, : self.horizon, :3]
+        eps_rot = model_output[:, : self.horizon, 3:9]
+        x_t_pos = current_sample[:, : self.horizon, :3]
+        x_t_rot = current_sample[:, : self.horizon, 3:9]
 
-        x_0_pos = (x_t_pos - torch.sqrt(1 - alpha_bar_pos) * eps_pos) / torch.sqrt(alpha_bar_pos)
-        x_0_rot = (x_t_rot - torch.sqrt(1 - alpha_bar_rot) * eps_rot) / torch.sqrt(alpha_bar_rot)
+        x_0_pos = (x_t_pos - torch.sqrt(1 - alpha_bar_pos) * eps_pos) / torch.sqrt(
+            alpha_bar_pos
+        )
+        x_0_rot = (x_t_rot - torch.sqrt(1 - alpha_bar_rot) * eps_rot) / torch.sqrt(
+            alpha_bar_rot
+        )
 
         # Analytical gradient in epsilon space
         coeff_pos = torch.sqrt(1 - alpha_bar_pos) / torch.sqrt(alpha_bar_pos)
         coeff_rot = torch.sqrt(1 - alpha_bar_rot) / torch.sqrt(alpha_bar_rot)
 
-        delta_eps_pos = self.guidance_strength * scale * coeff_pos * (x_0_pos - ref_model_space[..., :3])
-        delta_eps_rot = self.guidance_strength * scale * coeff_rot * (x_0_rot - ref_model_space[..., 3:9])
+        delta_eps_pos = (
+            self.guidance_strength
+            * scale
+            * coeff_pos
+            * (x_0_pos - ref_model_space[..., :3])
+        )
+        delta_eps_rot = (
+            self.guidance_strength
+            * scale
+            * coeff_rot
+            * (x_0_rot - ref_model_space[..., 3:9])
+        )
 
         # Build full guidance tensor matching model_output shape
         B, L, D = model_output.shape
@@ -228,8 +249,8 @@ class TweedieSteering(BaseSteering):
         guidance[:, :h, 3:9] = delta_eps_rot[:, :h]
 
         # Logging
-        mse_pos = F.mse_loss(x_0_pos, ref_model_space[..., :3], reduction='mean')
-        mse_rot = F.mse_loss(x_0_rot, ref_model_space[..., 3:9], reduction='mean')
+        mse_pos = F.mse_loss(x_0_pos, ref_model_space[..., :3], reduction="mean")
+        mse_rot = F.mse_loss(x_0_rot, ref_model_space[..., 3:9], reduction="mean")
 
         if self.current_episode_step % 10 == 0:
             logger.debug(
@@ -271,8 +292,9 @@ class TweedieSteering(BaseSteering):
 
             last_frame = last_frame_row.unsqueeze(0).expand(pad_length, -1)
 
-            assert available.shape[1] == last_frame.shape[1], \
+            assert available.shape[1] == last_frame.shape[1], (
                 f"Dimension mismatch: available={available.shape}, last_frame={last_frame.shape}"
+            )
 
             window = torch.cat([available, last_frame], dim=0)
 
