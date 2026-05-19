@@ -314,6 +314,29 @@ class CalvinEnvironment(BaseEnvironment):
         )
         return np.array(rgba, dtype=np.uint8)[:, :, :3]
 
+    def get_static_camera_matrices(
+        self, width: int, height: int, fov: float | None = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return (view_matrix, projection_matrix) used by `render_high_res_static`.
+
+        Task 7 Phase 2 — needed by `voxposer/scene_image.py` to project world-frame
+        OBB corners to pixel coords for annotation. The PyBullet camera tuple is
+        column-major; we reshape into (4, 4) and return as numpy arrays so the
+        caller can do `pixels = (P @ V @ world_h)` math.
+        """
+        import pybullet as p
+        cam = self._gym_env._env.cameras[0]
+        effective_fov = fov if fov is not None else cam.fov
+        view_matrix = np.array(cam.viewMatrix, dtype=np.float64).reshape(4, 4, order="F")
+        proj_matrix = np.array(
+            p.computeProjectionMatrixFOV(
+                effective_fov, width / height, cam.nearval, cam.farval,
+                physicsClientId=cam.cid,
+            ),
+            dtype=np.float64,
+        ).reshape(4, 4, order="F")
+        return view_matrix, proj_matrix
+
     def render_high_res_static(self, width: int, height: int, fov: float | None = None) -> np.ndarray:
         """
         Render the static overhead camera at an arbitrary resolution using PyBullet directly.

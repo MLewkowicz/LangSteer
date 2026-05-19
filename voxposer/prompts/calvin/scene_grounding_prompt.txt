@@ -1,0 +1,95 @@
+# Scene Grounding LMP — CALVIN
+#
+# You are given an annotated overhead photograph of a CALVIN play-table
+# scene plus a natural-language instruction. The annotations are coloured
+# oriented bounding boxes with name labels — they tell you what's in the
+# scene but NOT its state. Your job is to look at the raw pixels to infer
+# the state, and to disambiguate any vague phrases in the instruction
+# using the visible scene.
+#
+# Output a single Python assignment: `ret_val = {...}` with three keys:
+#
+#   blocks_visible: dict mapping each block-color → location bucket. Buckets:
+#       'table'           — block resting on the table surface.
+#       'drawer_inside'   — block inside the (any-state) drawer cavity.
+#       'slider_inside'   — block inside the slider cabinet shelf.
+#       'held'            — block currently held by the gripper.
+#       'absent'          — block not visible in the frame.
+#       Always emit all three known colors ('red_block', 'blue_block',
+#       'pink_block'). Use 'absent' for any colour you can't locate.
+#
+#   fixtures_state: dict mapping each fixture → discrete state.
+#       'drawer'   : 'open' | 'closed'
+#       'slider'   : 'left' | 'right' | 'center'
+#       'lightbulb': 'on'   | 'off'
+#       'led'      : 'on'   | 'off'
+#
+#   ambiguous_resolutions: dict mapping any vague noun phrase in the
+#       instruction → the canonical OBJECT_VOCAB token it refers to in
+#       this scene. Empty dict ({}) when the instruction is unambiguous.
+#       Valid OBJECT_VOCAB tokens:
+#         'red_block', 'blue_block', 'pink_block',
+#         'drawer', 'drawer_handle',
+#         'slider', 'slider_handle',
+#         'lightbulb', 'light_switch',
+#         'led', 'button'.
+#       Examples of phrases to resolve: 'the light', 'the block',
+#       'the block in the drawer', 'the cabinet'.
+#
+# Output ONLY the `ret_val = {...}` assignment. No commentary, no extra
+# code, no markdown. Stop at "# Query:".
+
+# Query: instruction = 'pick up the red block', annotated scene.
+ret_val = {
+    'blocks_visible': {
+        'red_block': 'table',
+        'blue_block': 'table',
+        'pink_block': 'table',
+    },
+    'fixtures_state': {
+        'drawer': 'closed',
+        'slider': 'left',
+        'lightbulb': 'off',
+        'led': 'off',
+    },
+    'ambiguous_resolutions': {},
+}
+
+# Query: instruction = 'Pick up the block from the drawer.', annotated scene.
+ret_val = {
+    'blocks_visible': {
+        'red_block': 'table',
+        'blue_block': 'drawer_inside',
+        'pink_block': 'absent',
+    },
+    'fixtures_state': {
+        'drawer': 'open',
+        'slider': 'right',
+        'lightbulb': 'off',
+        'led': 'off',
+    },
+    'ambiguous_resolutions': {
+        'the block in the drawer': 'blue_block',
+        'the block from the drawer': 'blue_block',
+    },
+}
+
+# Query: instruction = 'Turn on the light.', annotated scene.
+ret_val = {
+    'blocks_visible': {
+        'red_block': 'table',
+        'blue_block': 'table',
+        'pink_block': 'table',
+    },
+    'fixtures_state': {
+        'drawer': 'closed',
+        'slider': 'center',
+        'lightbulb': 'off',
+        'led': 'on',
+    },
+    'ambiguous_resolutions': {
+        'the light': 'lightbulb',
+    },
+}
+
+# Query:
