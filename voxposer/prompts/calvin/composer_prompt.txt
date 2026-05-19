@@ -2,6 +2,31 @@ import numpy as np
 from perception_utils import parse_query_obj
 from plan_utils import get_affordance_map, get_avoidance_map
 
+# ============================================================================
+# COMPOSER — task purpose
+# ============================================================================
+# You are the COMPOSER for a robot manipulation task. Your job is to decompose
+# a natural-language instruction into a sequence of stages that a diffusion
+# policy will execute. Each stage emits a (primitive, object) tuple plus an
+# affordance function:
+#   - primitive: the gripper action (grasp, push, pull, place, rotate)
+#   - object  : which fixture/block the policy attends to
+#   - affordance: where in 3D space the policy should aim
+# Stages execute sequentially. The next stage activates when the gripper
+# reaches the current stage's affordance basin.
+#
+# When the instruction is AMBIGUOUS (e.g. "open it", "close it", "the block"),
+# use the runtime SCENE-STATE BLOCKS (provided as `# Current scene state ...`
+# / `# Scene grounding ...` context above your query) to disambiguate:
+#   - "Close it" while drawer is open → (push, drawer_handle).
+#   - "Open it" while drawer is closed → (pull, drawer_handle).
+#   - "Pick up the block" when only one block sits on the table → grasp that
+#      specific color.
+# Default to the canonical task when no scene-state block is provided.
+#
+# ============================================================================
+# Stage tuple format
+# ============================================================================
 # Each stage tuple has one of two forms:
 #     (aff_fn, avoid_fn, mode, primitive, object)               # 5-tuple, no rotation
 #     (aff_fn, avoid_fn, rot_target, mode, primitive, object)   # 6-tuple with rotation

@@ -1,28 +1,33 @@
-# Scene Grounding LMP — CALVIN
+# ============================================================================
+# SCENE-GROUNDING LMP — task purpose
+# ============================================================================
+# You are the SCENE-GROUNDING module in a robot manipulation pipeline. The
+# downstream composer LMP decomposes natural-language instructions into stage
+# tuples for a diffusion policy. When the instruction is visually ambiguous
+# ("the block", "a block from the table", "the light"), the composer needs
+# resolution from a human-level scene reading. That's your job.
 #
 # You are given an annotated overhead photograph of a CALVIN play-table
 # scene plus a natural-language instruction. The annotations are coloured
-# oriented bounding boxes with name labels — they tell you what's in the
-# scene but NOT its state. Your job is to look at the raw pixels to infer
-# the state, and to disambiguate any vague phrases in the instruction
-# using the visible scene.
+# oriented bounding boxes with name labels — they identify what's in the
+# scene. State info (drawer open/closed, slider position, light states)
+# does NOT come from you — that comes from the simulator's `scene_obs` and
+# is fed into the composer as a separate text block. You do TWO things:
+#   1) Locate each block by color, and
+#   2) Disambiguate any vague noun phrase in the instruction using the
+#      visible scene.
 #
-# Output a single Python assignment: `ret_val = {...}` with three keys:
+# Output a single Python assignment: `ret_val = {...}` with TWO keys:
 #
-#   blocks_visible: dict mapping each block-color → location bucket. Buckets:
-#       'table'           — block resting on the table surface.
-#       'drawer_inside'   — block inside the (any-state) drawer cavity.
-#       'slider_inside'   — block inside the slider cabinet shelf.
-#       'held'            — block currently held by the gripper.
-#       'absent'          — block not visible in the frame.
+#   blocks_visible: dict mapping each block-color → location bucket.
+#       Buckets:
+#         'table'           — block resting on the table surface.
+#         'drawer_inside'   — block inside the drawer cavity.
+#         'slider_inside'   — block inside the slider cabinet shelf.
+#         'held'            — block currently held by the gripper.
+#         'absent'          — block not visible in the frame.
 #       Always emit all three known colors ('red_block', 'blue_block',
-#       'pink_block'). Use 'absent' for any colour you can't locate.
-#
-#   fixtures_state: dict mapping each fixture → discrete state.
-#       'drawer'   : 'open' | 'closed'
-#       'slider'   : 'left' | 'right' | 'center'
-#       'lightbulb': 'on'   | 'off'
-#       'led'      : 'on'   | 'off'
+#       'pink_block'). Use 'absent' for any color you can't locate.
 #
 #   ambiguous_resolutions: dict mapping any vague noun phrase in the
 #       instruction → the canonical OBJECT_VOCAB token it refers to in
@@ -31,10 +36,14 @@
 #         'red_block', 'blue_block', 'pink_block',
 #         'drawer', 'drawer_handle',
 #         'slider', 'slider_handle',
-#         'lightbulb', 'light_switch',
-#         'led', 'button'.
+#         'lightbulb', 'lightbulb_switch',
+#         'led', 'led_button', 'button',
+#         'light_switch', 'switch'.
 #       Examples of phrases to resolve: 'the light', 'the block',
-#       'the block in the drawer', 'the cabinet'.
+#       'the block in the drawer', 'the cabinet', 'a block'.
+#       Resolve 'the light' → 'lightbulb' (the larger ceiling bulb), or
+#       'led' (the small button-toggled light), based on which is the
+#       more salient subject of the instruction.
 #
 # Output ONLY the `ret_val = {...}` assignment. No commentary, no extra
 # code, no markdown. Stop at "# Query:".
@@ -46,12 +55,6 @@ ret_val = {
         'blue_block': 'table',
         'pink_block': 'table',
     },
-    'fixtures_state': {
-        'drawer': 'closed',
-        'slider': 'left',
-        'lightbulb': 'off',
-        'led': 'off',
-    },
     'ambiguous_resolutions': {},
 }
 
@@ -62,14 +65,8 @@ ret_val = {
         'blue_block': 'drawer_inside',
         'pink_block': 'absent',
     },
-    'fixtures_state': {
-        'drawer': 'open',
-        'slider': 'right',
-        'lightbulb': 'off',
-        'led': 'off',
-    },
     'ambiguous_resolutions': {
-        'the block in the drawer': 'blue_block',
+        'the block': 'blue_block',
         'the block from the drawer': 'blue_block',
     },
 }
@@ -80,12 +77,6 @@ ret_val = {
         'red_block': 'table',
         'blue_block': 'table',
         'pink_block': 'table',
-    },
-    'fixtures_state': {
-        'drawer': 'closed',
-        'slider': 'center',
-        'lightbulb': 'off',
-        'led': 'on',
     },
     'ambiguous_resolutions': {
         'the light': 'lightbulb',

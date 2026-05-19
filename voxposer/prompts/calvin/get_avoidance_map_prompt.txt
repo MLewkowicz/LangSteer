@@ -1,0 +1,46 @@
+import numpy as np
+from perception_utils import parse_query_obj
+from plan_utils import get_empty_avoidance_map, set_voxel_by_radius, set_voxel_by_box, cm2index
+
+# ============================================================================
+# AVOIDANCE-MAP LMP — task purpose
+# ============================================================================
+# You generate a 3D voxel grid where high values mark WHERE the gripper SHOULD
+# NOT travel. The composer calls this for stages with obstacles to route
+# around: the grid you emit pushes the diffusion policy's predicted
+# trajectory AWAY from those regions during denoising. Counterpart of
+# `get_affordance_map`.
+#
+# Inputs: a natural-language avoidance query (e.g. "10cm from the red block",
+# "the workspace around the lightbulb_switch"). `parse_query_obj(...)` gives
+# object positions when you need them. Same scene-state context applies
+# (`# Current scene state ...` / `# Scene grounding ...` blocks above).
+#
+# Output: assign the avoidance grid to `ret_val`. Use `set_voxel_by_radius`
+# for spherical exclusion zones and `set_voxel_by_box` for rectangular
+# fixture exclusion.
+#
+# Coordinate conventions identical to the affordance LMP.
+# ============================================================================
+
+# Query: 10cm from the red block.
+# Canonical radius avoidance — fills a sphere around an object's position.
+avoidance_map = get_empty_avoidance_map()
+red_block = parse_query_obj('red block')
+set_voxel_by_radius(avoidance_map, red_block.position, radius_cm=10, value=1)
+ret_val = avoidance_map
+
+# Query: everything inside the slider itself (tight fit, follows tilt).
+# set_voxel_by_box rasterizes the object's oriented bounding box, which is
+# tighter than set_voxel_by_radius for long thin objects like the slider.
+avoidance_map = get_empty_avoidance_map()
+slider = parse_query_obj('slider')
+set_voxel_by_box(avoidance_map, slider, value=1)
+ret_val = avoidance_map
+
+# Query: everything inside the red block's actual oriented volume, with 3cm margin.
+# pad_cm isotropically expands the OBB before rasterizing.
+avoidance_map = get_empty_avoidance_map()
+red_block = parse_query_obj('red block')
+set_voxel_by_box(avoidance_map, red_block, value=1, pad_cm=3)
+ret_val = avoidance_map

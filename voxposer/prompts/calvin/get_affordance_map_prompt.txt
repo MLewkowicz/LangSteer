@@ -1,0 +1,96 @@
+import numpy as np
+from perception_utils import parse_query_obj
+from plan_utils import get_empty_affordance_map, set_voxel_by_radius, set_voxel_by_box, cm2index
+
+# ============================================================================
+# AFFORDANCE-MAP LMP — task purpose
+# ============================================================================
+# You generate a 3D voxel grid where high values mark WHERE the gripper SHOULD
+# travel. The composer calls this for each stage of a manipulation task: the
+# grid you emit becomes the gradient field that pulls the diffusion policy's
+# predicted trajectory toward the target region during denoising.
+#
+# Inputs: a natural-language affordance query (e.g. "a point at the center of
+# the red block", "5cm above the drawer handle"). Optional context comes from
+# `parse_query_obj(...)` which returns object positions / OBBs.
+# When a `# Current scene state ...` or `# Scene grounding ...` block appears
+# above your query, use it to disambiguate phrases like "the block" or "the
+# light".
+#
+# Output: assign the affordance grid to `ret_val`. Use `affordance_map[x,y,z]=1`
+# for single-voxel targets (centroid-style) and `set_voxel_by_box(...)` for
+# bbox-fill targets. Single-voxel is preferred for grasp/center patterns —
+# bbox-fill is reserved for handle padding (no in-air-volume affordances).
+#
+# Coordinate conventions: x=left(-)→right(+), y=front(-)→back(+),
+# z=bottom→top. All cm offsets convert via `cm2index(cm)`.
+# ============================================================================
+
+# Query: a point at the center of the red block.
+# Canonical center pattern — covers "a point at X" / "a point on X" / "X itself".
+affordance_map = get_empty_affordance_map()
+red_block = parse_query_obj('red block')
+x, y, z = red_block.position
+affordance_map[x, y, z] = 1
+ret_val = affordance_map
+
+# Query: a point 5cm above the blue block.
+# Axis offset from an object face. Above/below use ±z (z is bottom-to-top).
+affordance_map = get_empty_affordance_map()
+blue_block = parse_query_obj('blue block')
+(min_x, min_y, min_z), (max_x, max_y, max_z) = blue_block.aabb
+center_x, center_y, center_z = blue_block.position
+x = center_x
+y = center_y
+z = max_z + cm2index(5, 'z')
+affordance_map[x, y, z] = 1
+ret_val = affordance_map
+
+# Query: a point 10cm to the right of the pink block.
+# Lateral offset. Left/right use ±x (x goes left-to-right, right is positive).
+# Mirror to subtract from min_x for "to the left of".
+affordance_map = get_empty_affordance_map()
+pink_block = parse_query_obj('pink block')
+(min_x, min_y, min_z), (max_x, max_y, max_z) = pink_block.aabb
+center_x, center_y, center_z = pink_block.position
+x = max_x + cm2index(10, 'x')
+y = center_y
+z = center_z
+affordance_map[x, y, z] = 1
+ret_val = affordance_map
+
+# Query: a point 8cm in front of the drawer handle.
+# Front/back use ∓y (y is front-to-back; front is NEGATIVE y). Mirror to
+# add to max_y for "behind".
+affordance_map = get_empty_affordance_map()
+drawer_handle = parse_query_obj('drawer handle')
+(min_x, min_y, min_z), (max_x, max_y, max_z) = drawer_handle.aabb
+center_x, center_y, center_z = drawer_handle.position
+x = center_x
+y = min_y - cm2index(8, 'y')
+z = center_z
+affordance_map[x, y, z] = 1
+ret_val = affordance_map
+
+# Query: anywhere within 5cm of the drawer handle.
+# Radius pattern — fills a sphere of voxels around the position.
+affordance_map = get_empty_affordance_map()
+drawer_handle = parse_query_obj('drawer handle')
+set_voxel_by_radius(affordance_map, drawer_handle.position, radius_cm=5, value=1)
+ret_val = affordance_map
+
+# Query: all voxels inside the slider handle (tight fit on the tilted geometry).
+# Use set_voxel_by_box for objects whose tight bounding volume is rotated —
+# it fills only the oriented box, not the inflated world-aligned envelope.
+affordance_map = get_empty_affordance_map()
+slider_handle = parse_query_obj('slider handle')
+set_voxel_by_box(affordance_map, slider_handle, value=1)
+ret_val = affordance_map
+
+# Query: all voxels inside the drawer handle, with 2cm of padding.
+# pad_cm isotropically expands the OBB before rasterizing — useful when a
+# tight fit would miss thin tools.
+affordance_map = get_empty_affordance_map()
+drawer_handle = parse_query_obj('drawer handle')
+set_voxel_by_box(affordance_map, drawer_handle, value=1, pad_cm=2)
+ret_val = affordance_map
