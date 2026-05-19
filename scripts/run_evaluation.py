@@ -24,7 +24,7 @@ import random
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -37,8 +37,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.run_experiment import instantiate_env, instantiate_policy, instantiate_steering
 from utils.rollout import EpisodeRunner
+from visualization import VisualizationConfig, VisualizationManager
+from voxposer.calvin_interface import ObjectResolutionError
+from voxposer.lmp import VocabValidationError
 
 logger = logging.getLogger(__name__)
+
+
+class _HardFailResult:
+    """Stand-in for `EpisodeResult` when an episode hard-fails before/during
+    `run_episode`. Used by the runner's per-episode catch to record a failed
+    episode without taking down the whole run.
+    """
+
+    success = False
+    episode_length = 0
+    episode_reward = 0.0
 
 
 def parse_args():
@@ -272,6 +286,27 @@ def run_condition(
         max_steps=max_steps * 2, collect_data=False,
     )
 
+    # Visualization (Task 5 iter 4). All renderers default to `enabled=false`
+    # in `conf/visualization/base.yaml`; CLI opt-in via:
+    #   visualization.html.enabled=true
+    #   visualization.live_costmap.enabled=true
+    #   visualization.video.enabled=true
+    # Per-condition outputs go to `<eval_output_dir>/<condition_name>/` so
+    # parallel conditions (baseline + langsteer in one run) don't collide.
+    viz_manager: Optional[VisualizationManager] = None
+    if "visualization" in hydra_cfg:
+        viz_cfg_dict = OmegaConf.to_container(hydra_cfg.visualization, resolve=True)
+        viz_config = VisualizationConfig.from_dict(viz_cfg_dict)
+        if viz_config.is_any_enabled():
+            # Default the HTML / video save dirs into the per-condition output dir.
+            viz_out_dir = results_path.parent / condition_name
+            if viz_config.html.enabled and not viz_config.html.save_dir:
+                viz_config.html.save_dir = str(viz_out_dir / "html")
+            if viz_config.video.enabled and viz_config.video.save_path == "outputs/videos":
+                viz_config.video.save_path = str(viz_out_dir / "videos")
+            viz_manager = VisualizationManager(viz_config)
+            logger.info(f"Initialized {viz_manager}")
+
     for task_name in task_list:
         env.set_task(task_name)
         env._max_steps = max_steps
@@ -319,12 +354,10 @@ def run_condition(
 
             obs = env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
 
-            # Setup steering
-            if steering is not None and hasattr(steering, "setup_episode"):
-                if hydra_cfg.steering.name == "voxposer":
-                    setup_voxposer_episode(steering, env)
-
-            # Step callback for steering
+            # Step callback for steering + visualization Protocol dispatch.
+            # Task 5 iter 4 stripped the `update_dash` vestige (verified via
+            # `git grep update_dash` — only the dead block here referenced it)
+            # and replaced it with the Manager dispatch path.
             def step_callback(timestep, obs, action, reward, done, info):
                 if steering is not None and hasattr(steering, "increment_step"):
                     steering.increment_step()
@@ -339,16 +372,63 @@ def run_condition(
                     steering.check_stage_transition(
                         obs.ee_pose[:3], float(obs.ee_pose[6])
                     )
-                if steering is not None and hasattr(steering, "update_dash"):
-                    steering.update_dash(obs.ee_pose[:3])
-                    steering.check_stage_transition(
-                        obs.ee_pose[:3], float(obs.ee_pose[6])
-                    )
 
-            result = runner.run_episode(
-                initial_obs=obs, reset_env=False, reset_policy=True,
-                step_callback=step_callback,
-            )
+                # Push latest steering snapshot to all enabled renderers
+                # (live tk, stage HTML, ...). No-op when no renderer enabled.
+                if (viz_manager is not None and steering is not None
+                        and hasattr(steering, "get_costmap_state")):
+                    snapshot = steering.get_costmap_state(obs.ee_pose[:3])
+                    if snapshot is not None:
+                        viz_manager.update_state(snapshot)
+                        viz_manager.tick()
+
+            # Catch hard-fail exceptions from steering (vocab linter exhaustion,
+            # object-name resolution exhaustion) at the episode boundary so a
+            # single broken task doesn't take down the whole run. The block
+            # covers `setup_voxposer_episode` (composer may raise at stage
+            # activation), the step callback (refresh_costmap re-evaluates),
+            # and the rollout itself. Each hard fail is logged + counted as a
+            # failed episode; the loop continues to the next ep.
+            hard_fail_reason: Optional[str] = None
+            try:
+                # Setup steering — composer + stage 0 activation may raise.
+                if steering is not None and hasattr(steering, "setup_episode"):
+                    if hydra_cfg.steering.name == "voxposer":
+                        setup_voxposer_episode(steering, env)
+
+                # Visualization lifecycle: notify renderers + install
+                # per-waypoint frame capture hook for video.
+                if viz_manager is not None:
+                    viz_manager.on_episode_start(ep_idx)
+                    if (viz_manager.config.video.enabled
+                            and hasattr(env, "set_waypoint_render_fn")):
+                        env.set_waypoint_render_fn(
+                            _make_waypoint_render(env, viz_manager, obs)
+                        )
+
+                result = runner.run_episode(
+                    initial_obs=obs, reset_env=False, reset_policy=True,
+                    step_callback=step_callback,
+                )
+                if viz_manager is not None:
+                    viz_manager.on_episode_end()
+                    if hasattr(env, "set_waypoint_render_fn"):
+                        env.set_waypoint_render_fn(None)
+            except VocabValidationError as e:
+                logger.error(
+                    f"    Episode {ep_idx + 1}/{num_episodes} hard-failed: "
+                    f"VocabValidationError (composer exhausted re-prompts). {e}"
+                )
+                result = _HardFailResult()
+                hard_fail_reason = "vocab_validation_exhausted"
+            except ObjectResolutionError as e:
+                logger.error(
+                    f"    Episode {ep_idx + 1}/{num_episodes} hard-failed: "
+                    f"ObjectResolutionError (composer emitted unresolvable "
+                    f"object name). {e}"
+                )
+                result = _HardFailResult()
+                hard_fail_reason = "object_resolution_exhausted"
 
             # Record episode data
             ep_record = {
@@ -358,6 +438,8 @@ def run_condition(
                 "steps": result.episode_length,
                 "reward": float(result.episode_reward),
             }
+            if hard_fail_reason is not None:
+                ep_record["hard_fail_reason"] = hard_fail_reason
             results["tasks"][task_name]["episodes"].append(ep_record)
 
             # Save immediately (crash-safe)
@@ -383,11 +465,64 @@ def run_condition(
             f"avg steps to success: {avg_steps:.0f}"
         )
 
+    if viz_manager is not None:
+        viz_manager.close()
     env.close()
 
     # Print final summary
     print_summary(results)
     return results
+
+
+def _make_waypoint_render(env, viz_manager, obs):
+    """Build the per-waypoint frame-capture closure mirroring `run_experiment.py`.
+
+    Returns a callable that CALVIN's `set_waypoint_render_fn(...)` invokes
+    every sub-step. Uses the resolved `VideoConfig`'s hi-res overrides
+    (falling back to native cam frames when not set).
+    """
+    vcfg = viz_manager.config.video
+    static_w = vcfg.static_record_width
+    static_h = vcfg.static_record_height
+    gripper_w = vcfg.gripper_record_width
+    gripper_h = vcfg.gripper_record_height
+    static_fov = vcfg.static_camera_fov
+    use_hires_static = static_w > 0 and static_h > 0
+    use_hires_gripper = gripper_w > 0 and gripper_h > 0
+
+    def _waypoint_render(calvin_obs):
+        frames = {}
+        if use_hires_static:
+            frames["static"] = env.render_high_res_static(
+                static_w, static_h, fov=static_fov
+            )
+        else:
+            raw = calvin_obs.get("rgb_obs", {}).get("rgb_static")
+            if raw is not None:
+                frames["static"] = raw
+        if use_hires_gripper:
+            frames["gripper"] = env.render_high_res_gripper(gripper_w, gripper_h)
+        else:
+            raw = calvin_obs.get("rgb_obs", {}).get("rgb_gripper")
+            if raw is not None:
+                frames["gripper"] = raw
+        viz_manager.on_waypoint(frames)
+
+    # Capture the initial env state before any actions so the first frame
+    # isn't missing from the MP4.
+    initial = {}
+    if use_hires_static:
+        initial["static"] = env.render_high_res_static(static_w, static_h, fov=static_fov)
+    elif obs.rgb.get("static") is not None:
+        initial["static"] = obs.rgb.get("static")
+    if use_hires_gripper:
+        initial["gripper"] = env.render_high_res_gripper(gripper_w, gripper_h)
+    elif obs.rgb.get("gripper") is not None:
+        initial["gripper"] = obs.rgb.get("gripper")
+    if initial:
+        viz_manager.on_waypoint(initial)
+
+    return _waypoint_render
 
 
 def print_summary(results: Dict):
@@ -538,6 +673,13 @@ def main():
             overrides.append(f"policy.{key}={value}")
         for key, value in eval_cfg.get("steering_overrides", {}).items():
             overrides.append(f"steering.{key}={value}")
+        # Visualization opt-in: per-condition viz toggles (Task 5 iter 4).
+        # YAML shape mirrors `steering_overrides`:
+        #   visualization_overrides:
+        #     html.enabled: true
+        #     video.enabled: true
+        for key, value in eval_cfg.get("visualization_overrides", {}).items():
+            overrides.append(f"visualization.{key}={value}")
         if args.perturbation_axis is not None:
             overrides += [
                 "env.perturbed_ann_path=perturbed_language_annotations.json",

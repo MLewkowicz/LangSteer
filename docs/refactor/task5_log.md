@@ -363,6 +363,121 @@ Per iter 1 deferred item:
 - [x] Headless tk init wrapped — no crash with `DISPLAY=` unset.
 - [x] Smoke test: 1×1 `open_drawer` → 1/1 success, 3 steps (identical to iter 1 + iter 2 baselines).
 
-## Iter 4 — _(pending)_
+## Iter 4 — wire `run_evaluation.py` + strip `update_dash` + final smoke
 
-## Iter 4 — _(pending)_
+**Date:** 2026-05-19.
+**Scope (per plan §5 iter 4 + team-lead's iter-4 brief):** instantiate
+`VisualizationManager` in `run_evaluation.py`; wire Protocol dispatch
+through the existing step callback + episode boundaries; install the
+per-waypoint capture hook for video; strip the `update_dash` vestige;
+smoke-test all 3 artifacts end-to-end.
+
+### Files modified
+
+- `scripts/run_evaluation.py`:
+  - Added `from visualization import VisualizationConfig,
+    VisualizationManager`.
+  - `run_condition`: build `viz_manager` after steering wiring;
+    per-condition output dir `<eval_output_dir>/<condition_name>/{html,videos}`
+    (avoids collision when multiple conditions run in one eval invocation).
+  - `step_callback`: dropped the dead `update_dash` block (verified
+    `git grep update_dash` returns 0 hits outside the iter-4 comment).
+    Added Manager dispatch: `update_state(steering.get_costmap_state(...))`
+    + `tick()`.
+  - Episode loop:
+    - `viz_manager.on_episode_start(ep_idx)` before `run_episode`.
+    - `env.set_waypoint_render_fn(_make_waypoint_render(env, viz, obs))`
+      when `video.enabled` (mirrors `run_experiment.py`'s pattern; ships
+      hi-res or native frames based on `VideoConfig`).
+    - `viz_manager.on_episode_end()` after `run_episode`.
+    - `env.set_waypoint_render_fn(None)` to clear the hook before the
+      next ep.
+  - End of `run_condition`: `viz_manager.close()` before `env.close()`.
+  - New helper `_make_waypoint_render(env, viz, obs)` builds the
+    sub-step frame-capture closure; same shape as `run_experiment.py`'s
+    inline closure but factored to a module-level fn since it's now
+    used by both scripts. Includes the initial-frame capture before
+    actions execute.
+  - Added `visualization_overrides` mechanism in `main()` —
+    eval YAMLs can opt-in to viz toggles via:
+    ```yaml
+    visualization_overrides:
+      html.enabled: true
+      video.enabled: true
+    ```
+    Mirrors the existing `steering_overrides` block.
+
+- `conf/evaluation/_task5_iter4_smoke.yaml`: new smoke-test eval YAML
+  (clone of `langsteer_primitive_object.yaml` with all 3 viz toggles
+  on). Underscore prefix marks it as a dev-only artifact; safe to
+  delete post-task.
+
+### Validation — final smoke (all 3 artifacts)
+
+Cmd: `uv run scripts/run_evaluation.py --evaluation _task5_iter4_smoke --num-episodes 1 --output-dir /tmp/task5_iter4_smoke/`
+
+| Check | Result |
+|---|---|
+| `git grep update_dash` | 0 live callers; only iter-4 comment remains |
+| `ruff check scripts/run_evaluation.py visualization/` | All checks passed |
+| Manager init | `VisualizationManager(modes=['html', 'live_costmap', 'video'])` |
+| **HTML output** | **3 files** at `outputs/.../html/{22_50_15.html, 22_50_20.html, latest.html}` — 1 per stage activation + symlink-equivalent `latest.html` |
+| **MP4 output** | **2 files** at `outputs/.../videos/{episode_0000_static.mp4, episode_0000_gripper.mp4}` — both opened at 200×200, frames captured via `on_waypoint`, "Finished recording" on close |
+| **Live tk window** | Opened on host with `$DISPLAY=:0` set; smoke ran end-to-end without crash |
+| **Headless tk fallback** | Tested separately: `DISPLAY= uv run python -c "VisualizationManager(VisualizationConfig(live_costmap=LiveCostmapConfig(enabled=True))); ..."` → warning + `_disabled=True` + Protocol calls no-op + no crash |
+| Episode result | **1/1 success, 3 steps** — identical to iter 1+2+3 baselines |
+
+### Iter 4 acceptance — status
+
+- [x] `run_evaluation.py` instantiates `VisualizationManager` + dispatches all hooks.
+- [x] `update_dash` vestige gone (verified 0 live callers).
+- [x] Smoke produces HTML (3 files) + MP4 (2 files) + live-tk OK + headless degrades cleanly.
+- [x] `ruff check` clean on touched files.
+- [x] README marked Task 5 ✅ done.
+
+---
+
+## Task 5 — TOTAL summary
+
+**Headline numbers (across 4 iters):**
+
+| | Pre-Task-5 | Post-Task-5 | Δ |
+|---|---:|---:|---:|
+| Renderer count | 5 (camera/costmap/matplotlib/plotly/pybullet) | **3** (stage_html/live_costmap_tk/video_recorder) | −2 |
+| `visualization/` LoC | ~1548 | ~860 | **~−690** |
+| `utils/visualization/` LoC | 634 (3 files) | 0 (dir gone) | **−634** |
+| `visualization/collectors/` LoC | 221 (2 files) | 0 (dir gone) | **−221** |
+| `utils/visualize_steering.py` | (orphan) | gone | **−~80** |
+| `tmp/denoise_visualizer/` | (untracked) | gone | n/a |
+| Config blocks in `VisualizationConfig` | 6 + 5 toggles | 3 (html/live_costmap/video) | −3 |
+| Deprecated Manager aliases | 0 → 5 (added iter 1) → 0 (dropped iter 3) | net zero | clean |
+| **Net LoC reduction** | | | **~−1700 LoC** |
+
+**Renderer Protocol shape:** 3 core methods (`update_state`/`tick`/`close`) +
+3 optional lifecycle hooks (`on_episode_start`/`on_episode_end`/`on_waypoint`).
+`Manager.register(renderer)` is the documented extension point for
+Task #7's `SceneImageRenderer`.
+
+**OBJECT label** added to live tk window per user-facing brief; color-coded
+via `_OBJ_COLORS`. Plumbed from `StageManager.snapshot()["object"]`.
+
+**HTML dedup:** stage HTMLs now exclusively produced via the
+`StageHtmlRenderer` → `Manager` dispatch path. The direct
+`ValueMapVisualizer.visualize()` call in `stage_manager.py::_activate_stage`
+is gone. Same `ValueMapVisualizer` under the hood — no behavior change.
+
+**Headless tk hardening:** `LiveCostmapTkRenderer.__init__` wraps `tk.Tk()`
+in try/except, sets `_disabled=True` on `TclError`. All Protocol methods
+early-return when disabled. Safe to enable `visualization.live_costmap.enabled=true`
+on headless GPU servers — warns + no crash.
+
+**Eval wiring:** `run_evaluation.py` now instantiates `VisualizationManager`
++ dispatches the full Protocol (per-step `update_state`+`tick`, episode
+boundaries, per-waypoint frame capture for video). Opt-in via the new
+`visualization_overrides` block in eval YAMLs (mirrors the existing
+`steering_overrides` pattern).
+
+**Behavior preservation:** 1×1 `open_drawer` smoke ran identically across
+iters 1, 2, 3, and 4 (1/1 success, 3 steps — matches dwell=4 canary
+baseline from Task 4). No inference-side regression introduced by the
+visualization refactor.

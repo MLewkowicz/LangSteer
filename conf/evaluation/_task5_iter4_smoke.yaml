@@ -1,0 +1,25 @@
+# Task 5 iter 4 smoke — clone of langsteer_primitive_object.yaml with all
+# 3 viz artifacts enabled. Lives in conf/evaluation/ alongside the
+# production configs; safe to delete after Task 5 wraps.
+
+condition_name: "Task5 iter4 smoke (all viz)"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/task3b_final_28x5_v3
+
+visualization_overrides:
+  html.enabled: true
+  live_costmap.enabled: true
+  video.enabled: true
+
+tasks:
+  - open_drawer
