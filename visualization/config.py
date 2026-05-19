@@ -6,8 +6,8 @@ Iter 2 of Task 5: dropped `CameraVisualizationConfig`,
 `trajectory_3d` / `reference_plot` toggles. The surviving three blocks
 drive the three artifacts the user-facing brief retained:
     - `html`           — stage HTML (via `StageHtmlRenderer`)
-    - `live_costmap`   — live tk costmap window (via `LiveCostmapWindow`)
-    - `video`          — MP4 video recording (via `CameraRenderer`)
+    - `live_costmap`   — live tk costmap window (via `LiveCostmapTkRenderer`)
+    - `video`          — MP4 video recording (via `VideoRecorder`)
 """
 
 from dataclasses import dataclass, field
@@ -32,9 +32,9 @@ class HtmlConfig:
 class LiveCostmapConfig:
     """Configuration for the live tkinter costmap window.
 
-    Drives `visualization/renderers/costmap_tk.py:LiveCostmapWindow`. The
-    window mirrors `VoxPoserSteering._value_map` in real time alongside the
-    PyBullet view, replacing the old browser-based Dash server.
+    Drives `visualization/renderers/live_costmap_tk.py:LiveCostmapTkRenderer`.
+    The window mirrors `VoxPoserSteering._value_map` in real time alongside
+    the PyBullet view, replacing the old browser-based Dash server.
     """
     enabled: bool = False
     refresh_interval: int = 1      # tick the window every N env steps
@@ -46,9 +46,9 @@ class LiveCostmapConfig:
 class VideoConfig:
     """Configuration for MP4 video recording.
 
-    Drives `visualization/renderers/camera_renderer.py:CameraRenderer`'s
-    video path (`start_video` / `write_frame` / `stop_video`). Iter 3
-    renames the class to `VideoRecorder` and strips the per-step PNG path.
+    Drives `visualization/renderers/video_recorder.py:VideoRecorder`.
+    Writers are opened lazily on the first `on_waypoint` frame so the
+    output resolution matches the actual rendered data.
     """
     enabled: bool = False
     save_path: str = "outputs/videos"

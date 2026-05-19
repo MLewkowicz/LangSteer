@@ -233,6 +233,136 @@ Net deletion: ~1283 LoC + 6 files + 2 directories.
 - [x] Eval smoke run succeeds with no behavioral regression
       (open_drawer 1/1, 3 steps — identical to iter 1 baseline).
 
-## Iter 3 — _(pending)_
+## Iter 3 — renames + OBJECT label + HTML dedup + drop deprecated aliases + headless tk
+
+**Date:** 2026-05-19.
+**Scope (per plan §5 iter 3 + team-lead's iter-3 brief):** rename
+`costmap_tk` → `live_costmap_tk` and `camera_renderer` → `video_recorder`
+(class names match); add OBJECT label to the live tk window; remove the
+direct `ValueMapVisualizer.visualize(...)` call from `stage_manager.py`
+to dedup HTML output; drop the 5 deprecated Manager aliases; harden the
+live tk renderer's `tk.Tk()` init against `TclError` on headless hosts;
+strip the orphan `utils/visualize_steering.py`.
+
+### Renames (via `git mv` for history preservation)
+
+- `visualization/renderers/costmap_tk.py` →
+  `visualization/renderers/live_costmap_tk.py`.
+  Class `LiveCostmapWindow` → `LiveCostmapTkRenderer`.
+- `visualization/renderers/camera_renderer.py` →
+  `visualization/renderers/video_recorder.py`.
+  Class `CameraRenderer` → `VideoRecorder`.
+
+### OBJECT label
+
+- `LiveCostmapTkRenderer._build_window`: added `object_var = StringVar()`
+  + side-panel block (`OBJECT` header + value label, monospace bold,
+  18pt). Block placed ABOVE `PRIMITIVE` for visual hierarchy.
+- `LiveCostmapTkRenderer._render`: reads `state['object']`, sets var,
+  color-coded via `_color_for_object()` from `_OBJ_COLORS`. Empty value
+  → dim-gray '—'.
+- `steering/stage_manager.py::snapshot(...)`: added `"object"` key
+  alongside the existing `"primitive"` key (reads
+  `self._stages[idx].object`). The existing `current()` accessor already
+  resolved `active_obj` the same way — no duplication.
+
+### HTML dedup
+
+- `steering/stage_manager.py`:
+  - `__init__` signature: dropped `visualize: bool` parameter.
+  - Constructor body: dropped `self._visualize` + `self._visualizer`
+    fields.
+  - `_init_lmp_system`: dropped the conditional `ValueMapVisualizer`
+    instantiation.
+  - `_activate_stage`: removed the direct
+    `self._visualizer.visualize(...)` call site (was lines 425-430).
+    Replaced with a 5-line comment.
+  - Top of file: removed unused `from voxposer.visualizer import
+    ValueMapVisualizer` import.
+- `steering/voxposer_steering.py`: removed `visualize=cfg.get("visualize",
+  False)` kwarg from the StageManager constructor call.
+- `conf/steering/voxposer.yaml`: removed `visualize`,
+  `visualization_quality`, `visualization_save_dir` keys (4 lines
+  including comment). The equivalent settings now live at
+  `cfg.visualization.html.*`.
+- `scripts/run_experiment.py`: replaced the `cfg.steering.visualize` /
+  `cfg.steering.visualization_save_dir` Hydra-output-dir wiring with the
+  new `cfg.visualization.html.enabled` / `cfg.visualization.html.save_dir`
+  path. Same lazy-default behavior (save_dir = Hydra output dir when null).
+
+### Deprecated Manager aliases — dropped
+
+Removed from `visualization/manager.py`:
+- `update_costmap(**kwargs)` (was → `update_state(state_dict)`)
+- `tick_costmap()` (was → `tick()`)
+- `start_recording(eid)` (was → `on_episode_start(eid)`)
+- `stop_recording()` (was → `on_episode_end()`)
+- `record_step(frames)` (was → `on_waypoint(frames)`)
+- `shutdown()` (was → `close()`)
+
+`scripts/run_experiment.py` migrated to Protocol methods directly:
+- `update_costmap(**state)` + `tick_costmap()` → `update_state(state)` +
+  `tick()`
+- `start_recording(eid)` → `on_episode_start(eid)`
+- `record_step(frames)` → `on_waypoint(frames)` (2 call sites — per-step
+  + initial-frame)
+- `stop_recording()` → `on_episode_end()`
+- `shutdown()` → `close()`
+
+### Protocol cleanup — `VideoRecorder.on_episode_start(video_cfg=...)`
+
+Per iter 1 deferred item:
+- Moved `video_cfg` from per-call kwarg to `__init__(video_cfg)`. The
+  Manager now passes `config.video` at construction; per-episode hook
+  takes only `episode_id`.
+- `Manager.on_episode_start` lost the special-case branch for the camera
+  renderer (was passing `video_cfg=self.config.video` via kwarg) — pure
+  uniform dispatch via `getattr(r, 'on_episode_start', _noop)(eid)`.
+- Stripped `start_video` / `write_frame` / `stop_video` legacy aliases
+  from `VideoRecorder` (the Manager methods that called them are gone).
+  Renamed internal implementations to `_open_writer` / `_write_frame` /
+  `_stop_video`.
+
+### Headless tk hardening
+
+- `LiveCostmapTkRenderer.__init__`: wrapped `self._build_window()` in
+  `try / except tk.TclError`. On failure (typical: `couldn't connect to
+  display`), logs a warning and sets `self._disabled = True`. Returns
+  early; all Protocol methods then early-return.
+- `update_state` / `tick` / `close`: check `self._disabled` first.
+- Test: `DISPLAY= uv run python -c "from ...live_costmap_tk import
+  LiveCostmapTkRenderer; r = LiveCostmapTkRenderer(); ...; r.close()"` →
+  no crash, warning logged, methods no-op. ✓
+
+### Orphan strip
+
+- `utils/visualize_steering.py` deleted (only consumer was the iter-2-
+  stripped `matplotlib_renderer.py`; `git grep visualize_steering`
+  returns 0 hits in production).
+
+### Validation (per iter 3 acceptance)
+
+| Check | Result |
+|---|---|
+| Renames landed via `git mv` | ✓ history preserved |
+| `ruff check visualization/ steering/stage_manager.py steering/voxposer_steering.py` | **All checks passed!** |
+| `git grep` for renamed symbols / dropped aliases | 0 functional hits; only doc/comment mentions of the rename itself |
+| Module-level smoke | Imports OK; Empty + video Manager construct; Protocol dispatch + lifecycle hooks all work; **all 6 deprecated aliases verified removed** (`hasattr(mgr, alias) == False`) |
+| Headless tk smoke (`DISPLAY=` unset) | LiveCostmapTkRenderer init warns + `_disabled = True`; all methods no-op without crash |
+| OBJECT label plumbing | `StageManager.snapshot()` returns `state["object"]`; `LiveCostmapTkRenderer.update_state` consumes it; side-panel renderer writes to `object_var` + color-codes via `_OBJ_COLORS` |
+| HTML dedup | Direct `ValueMapVisualizer.visualize()` call removed from `stage_manager.py`; `_visualize` flag + `_visualizer` field + ValueMapVisualizer import all gone; runtime HTML now exclusively via `StageHtmlRenderer` ↔ Manager dispatch |
+| Eval smoke (1×1 `open_drawer`) | **1/1 success, 3 steps** — identical to iter 1 + iter 2 baselines. No behavioral regression. |
+
+### Iter 3 acceptance — status
+
+- [x] Renames landed; all imports updated.
+- [x] `ruff check visualization/` → 0 errors.
+- [x] `git grep update_costmap\|tick_costmap\|start_recording\|stop_recording\|record_step\|shutdown\|CameraRenderer\|costmap_tk` → 0 production hits.
+- [x] OBJECT label visible in side panel (plumbing verified end-to-end).
+- [x] HTML dedup: single call site (StageHtmlRenderer.tick() → ValueMapVisualizer.visualize).
+- [x] Headless tk init wrapped — no crash with `DISPLAY=` unset.
+- [x] Smoke test: 1×1 `open_drawer` → 1/1 success, 3 steps (identical to iter 1 + iter 2 baselines).
+
+## Iter 4 — _(pending)_
 
 ## Iter 4 — _(pending)_

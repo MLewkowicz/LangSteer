@@ -1,13 +1,19 @@
 """Live tkinter + matplotlib 3D costmap window for VoxPoser steering.
 
-Replaces the old browser-based Dash server. The window is driven directly
-from the experiment loop's `step_callback`: each tick pumps Tk events and
-re-binds matplotlib artists to the current `ValueMap` state.
+Renamed from `costmap_tk.py::LiveCostmapWindow` to
+`live_costmap_tk.py::LiveCostmapTkRenderer` in iter 3 of Task 5. The
+window is driven directly from the experiment loop's `step_callback`:
+each tick pumps Tk events and re-binds matplotlib artists to the current
+`ValueMap` state.
 
-The window stays responsive without `mainloop()` — `tick()` calls
-`root.update()` so mouse-drag rotation, scrolling, and close events fire
-between env steps. The single-threaded design means what's drawn is
-exactly what `VoxPoserSteering` is using to steer.
+Headless-safe: the `tk.Tk()` constructor crashes with `TclError: no display
+name` on headless GPU servers. Iter 3 wraps that call in try/except and
+sets `self._disabled = True` on failure — every Protocol method then
+degrades to a no-op, so a CLI override `visualization.live_costmap.enabled=true`
+on a headless host warns + continues instead of bringing down the eval.
+
+Side panel: OBJECT (new in iter 3) + PRIMITIVE + STAGE i/N + STEP +
+INSTRUCTION. OBJECT and PRIMITIVE are both color-coded by category.
 """
 
 from __future__ import annotations
@@ -50,7 +56,9 @@ _PRIMITIVE_COLORS = {
 }
 
 
-def _color_for_object(name: str) -> str:
+def _color_for_object(name: Optional[str]) -> str:
+    if not name:
+        return '#ffaa33'
     lname = name.lower()
     for key, col in _OBJ_COLORS.items():
         if key in lname:
@@ -58,8 +66,12 @@ def _color_for_object(name: str) -> str:
     return '#ffaa33'
 
 
-class LiveCostmapWindow:
-    """Single-window live 3D costmap viewer driven from the rollout loop."""
+class LiveCostmapTkRenderer:
+    """Single-window live 3D costmap viewer driven from the rollout loop.
+
+    Renderer Protocol: `update_state(state) / tick() / close()`. Headless-safe
+    via `_disabled` flag set on tk init failure.
+    """
 
     def __init__(self, refresh_interval: int = 1, downsample: int = 4,
                  point_threshold: float = 0.05):
@@ -80,8 +92,22 @@ class LiveCostmapWindow:
         self._obb_collection: Optional[Line3DCollection] = None
         self._obb_text_artists: list = []
 
-        self._build_window()
-        logger.info("LiveCostmapWindow opened (live tk costmap viewer)")
+        # Headless-safe init. `tk.Tk()` raises TclError on hosts without an X
+        # display; degrade to a silent no-op renderer instead of crashing.
+        self._disabled = False
+        self._closed = False
+        try:
+            self._build_window()
+        except tk.TclError as e:
+            logger.warning(
+                f"LiveCostmapTkRenderer: tk.Tk() failed ({e}); "
+                f"renderer disabled (typical on headless servers without "
+                f"$DISPLAY). Set visualization.live_costmap.enabled=false "
+                f"to silence this."
+            )
+            self._disabled = True
+            return
+        logger.info("LiveCostmapTkRenderer opened (live tk costmap viewer)")
 
     # ------------------------------------------------------------------
     # Window scaffolding
@@ -93,7 +119,6 @@ class LiveCostmapWindow:
         self.root.configure(bg='#111')
         self.root.geometry('1100x780')
         self.root.protocol('WM_DELETE_WINDOW', self._on_close_request)
-        self._closed = False
 
         self.root.columnconfigure(0, weight=1)
         self.root.columnconfigure(1, weight=0)
@@ -122,6 +147,18 @@ class LiveCostmapWindow:
         self.step_var = tk.StringVar(value='step —')
         self.instruction_var = tk.StringVar(value='')
         self.primitive_var = tk.StringVar(value='—')
+        self.object_var = tk.StringVar(value='—')
+
+        # OBJECT — current stage's target object. Iter 3 of Task 5 added
+        # this; mirrors the PRIMITIVE block visually with category-color
+        # coding via `_OBJ_COLORS`.
+        tk.Label(side, text='OBJECT', bg='#111', fg='#888',
+                 font=('monospace', 9)).pack(fill='x', pady=(8, 0))
+        self._object_label = tk.Label(
+            side, textvariable=self.object_var, bg='#111', fg='#fff',
+            font=('monospace', 18, 'bold'),
+        )
+        self._object_label.pack(fill='x', pady=(0, 8))
 
         tk.Label(side, text='PRIMITIVE', bg='#111', fg='#888',
                  font=('monospace', 9)).pack(fill='x', pady=(8, 0))
@@ -159,7 +196,7 @@ class LiveCostmapWindow:
         self._closed = True
 
     # ------------------------------------------------------------------
-    # Public API
+    # Renderer Protocol
     # ------------------------------------------------------------------
 
     def update_state(self, state: dict) -> None:
@@ -167,13 +204,15 @@ class LiveCostmapWindow:
 
         `state` is the steering snapshot dict (see `Renderer` Protocol). Keys
         consumed: value_map, ee_pos, target, objects, step, stage_idx,
-        num_stages, instruction, primitive. Extra keys are ignored.
+        num_stages, instruction, primitive, object. Extra keys are ignored.
         """
+        if self._disabled:
+            return
         self._state = dict(state)
 
     def tick(self) -> None:
         """Re-render the figure and pump Tk events. Throttled by refresh_interval."""
-        if self._closed:
+        if self._disabled or self._closed:
             return
         self._tick_counter += 1
         if self._tick_counter % self.refresh_interval != 0:
@@ -194,7 +233,7 @@ class LiveCostmapWindow:
             self._closed = True
 
     def close(self) -> None:
-        if self._closed:
+        if self._disabled or self._closed:
             return
         self._closed = True
         try:
@@ -241,6 +280,17 @@ class LiveCostmapWindow:
         else:
             self.primitive_var.set('—')
             self._primitive_label.configure(fg='#666')
+
+        # OBJECT label — added in iter 3 of Task 5. Mirrors PRIMITIVE: empty
+        # value renders as '—' in dim gray; populated value gets the
+        # category color from `_OBJ_COLORS`.
+        obj = state.get('object')
+        if obj:
+            self.object_var.set(obj.upper())
+            self._object_label.configure(fg=_color_for_object(obj))
+        else:
+            self.object_var.set('—')
+            self._object_label.configure(fg='#666')
 
     def _setup_axes(self, vm: Any) -> None:
         bmin = np.asarray(vm.workspace_bounds_min, dtype=np.float32)

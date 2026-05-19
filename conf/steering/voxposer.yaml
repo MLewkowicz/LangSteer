@@ -123,15 +123,22 @@ grasp_stability_eps: 0.002    # m: max spread allowed across the window
 refresh_costmap: true
 refresh_interval: 1  # refresh every N environment steps
 
-# Last-stage loop-back failure recovery. When the EE has dwelled in the last
-# stage's affordance basin for `last_stage_dwell_steps` consecutive env steps
-# without the env signalling success, restart from stage 0 (reusing the
-# composer's already-parsed stages — no new LLM call). Closes the gap with
-# language-conditioned policies, which retry implicitly via the language token
-# instead of locking onto a goal location they've already "reached".
-loop_back_on_last_stage: false   # opt-in; default keeps prior behavior
-last_stage_dwell_steps: 15       # ~1.5s at CALVIN's ~10 Hz env step rate
-last_stage_dwell_radius: ${.stage_proximity_threshold}
+# Last-stage loop-back failure recovery. After `last_stage_dwell_steps`
+# policy-iters spent at the last stage without the success oracle ending the
+# episode, restart from stage 0 (reusing the composer's already-parsed stages
+# — no new LLM call). Default OFF: at the current eval budget (max_steps=120,
+# pred_horizon=20 → 6 policy-iters/episode) the mechanism cannot distinguish
+# "policy stuck" from "policy completing slowly" and fires during legitimate
+# last-stage execution (empirically observed close_drawer regression). Kept
+# wired for opt-in research under different eval params.
+loop_back_on_last_stage: false
+last_stage_dwell_steps: 4        # policy-iters at last stage before reset
+                                 # (was 3; bumped to 4 in Task 4 to avoid cutting
+                                 # short slow-legit tasks like close_drawer while
+                                 # still recovering oscillation cases like
+                                 # lift_red_block_drawer. With max_steps=360 →
+                                 # 18 policy-iters/ep, dwell=4 leaves a 14-iter
+                                 # recovery budget after the first fire.)
 max_loop_backs: 3                # safety cap so a stuck rollout still ends
 
 # Default stage mode for legacy 2-tuple LLM outputs (no 3rd element).
@@ -146,7 +153,11 @@ map_size: 100
 
 # LLM settings (provider-agnostic: "anthropic" or "openai")
 llm_provider: openai 
-llm_model: gpt-4o
+llm_model: gpt-5.4-mini  # was gpt-4o → gpt-5-chat-latest → gpt-5.4-mini (user correction 2026-05-18).
+                         # gpt-5.4-mini requires `max_completion_tokens` instead of `max_tokens` and
+                         # rejects server-side `stop` sequences. voxposer/lmp.py::_call_openai handles
+                         # both per-model — passes max_completion_tokens for gpt-5* and truncates at
+                         # stop markers client-side.
 llm_temperature: 0
 llm_max_tokens: 512
 cache_dir: cache/voxposer_llm
@@ -156,8 +167,7 @@ load_cache: true
 workspace_bounds_min: [-0.35, -0.60, 0.30]
 workspace_bounds_max: [0.35, 0.15, 0.85]
 
-# 3D Visualization (static Plotly HTML, generated per stage activation)
-# For the live in-window 3D viewer, set `visualization.live_costmap=true`.
-visualize: true
-visualization_quality: low
-visualization_save_dir: null  # defaults to Hydra output dir
+# (Task 5 iter 3 moved HTML visualization config to
+# `visualization.html.*` — the steering module no longer owns this. Enable
+# stage HTMLs via `visualization.html.enabled=true`; configure save_dir /
+# quality at `visualization.html.save_dir` / `visualization.html.quality`.)

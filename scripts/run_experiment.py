@@ -105,13 +105,15 @@ def main(cfg: DictConfig) -> None:
         env._instruction = cfg.instruction
         logger.info(f"Policy instruction override: '{cfg.instruction}'")
 
-    # VoxPoser: default visualization save dir to Hydra output dir when unset
-    if (cfg.steering.get('name') == 'voxposer'
-            and cfg.steering.get('visualize', False)
-            and not cfg.steering.get('visualization_save_dir', None)):
+    # VoxPoser stage HTMLs: default save dir to Hydra output dir when unset.
+    # Task 5 iter 3 moved the HTML toggle from `cfg.steering.visualize` to
+    # `cfg.visualization.html.enabled`; save_dir lives on the same block.
+    if ('visualization' in cfg
+            and cfg.visualization.get('html', {}).get('enabled', False)
+            and not cfg.visualization.html.get('save_dir', None)):
         hydra_output_dir = HydraConfig.get().runtime.output_dir
-        steering._lmp_config['visualization_save_dir'] = hydra_output_dir
-        logger.info(f"VoxPoser visualizations will be saved to: {hydra_output_dir}")
+        cfg.visualization.html.save_dir = hydra_output_dir
+        logger.info(f"VoxPoser stage HTMLs will be saved to: {hydra_output_dir}")
 
     # DiffuserActor requires per-pixel PCD images and gripper camera
     if cfg.policy.name == "diffuser_actor" and not env._provide_pcd_images:
@@ -313,13 +315,16 @@ def main(cfg: DictConfig) -> None:
                     obs.ee_pose[:3], float(obs.ee_pose[6])
                 )
 
-            # Push latest costmap state to the live tk window (if enabled)
+            # Push latest steering snapshot to all enabled renderers
+            # (live tk window, etc.). Task 5 iter 3 dropped the deprecated
+            # `update_costmap` / `tick_costmap` aliases in favor of the
+            # Protocol methods.
             if (viz_manager is not None and steering is not None
                     and hasattr(steering, 'get_costmap_state')):
                 state = steering.get_costmap_state(obs.ee_pose[:3])
                 if state is not None:
-                    viz_manager.update_costmap(**state)
-                    viz_manager.tick_costmap()
+                    viz_manager.update_state(state)
+                    viz_manager.tick()
 
             # Log step info
             logger.info(f"Step {timestep:3d} | Action: {action.trajectory[0][:3]} (pos) {action.trajectory[0][6]:.2f} (grip)")
@@ -328,7 +333,7 @@ def main(cfg: DictConfig) -> None:
 
         # Start video recording for the new episode (no-op when video disabled).
         if viz_manager:
-            viz_manager.start_recording(episode)
+            viz_manager.on_episode_start(episode)
 
         # Register per-waypoint recording callback so every sub-step is captured,
         # not just once per policy prediction.
@@ -355,7 +360,7 @@ def main(cfg: DictConfig) -> None:
                     raw = calvin_obs.get('rgb_obs', {}).get('rgb_gripper')
                     if raw is not None:
                         frames['gripper'] = raw
-                viz_manager.record_step(frames)
+                viz_manager.on_waypoint(frames)
 
             env.set_waypoint_render_fn(_waypoint_render)
             # Capture the initial env state before any actions
@@ -369,7 +374,7 @@ def main(cfg: DictConfig) -> None:
             elif obs.rgb.get('gripper') is not None:
                 initial_frames['gripper'] = obs.rgb.get('gripper')
             if initial_frames:
-                viz_manager.record_step(initial_frames)
+                viz_manager.on_waypoint(initial_frames)
 
         # Run episode using shared runner
         result = runner.run_episode(
@@ -382,7 +387,7 @@ def main(cfg: DictConfig) -> None:
 
         # Stop video recording for this episode and clear the waypoint hook
         if viz_manager:
-            viz_manager.stop_recording()
+            viz_manager.on_episode_end()
         if hasattr(env, 'set_waypoint_render_fn'):
             env.set_waypoint_render_fn(None)
 
@@ -409,7 +414,7 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"{'='*60}")
 
     if viz_manager is not None:
-        viz_manager.shutdown()
+        viz_manager.close()
 
 
 if __name__ == "__main__":

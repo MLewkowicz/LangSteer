@@ -1,14 +1,20 @@
 """MP4 video recorder for CALVIN camera streams.
 
-Iter 2 of Task 5: stripped the per-step PNG / matplotlib display paths.
-The class now only handles MP4 recording for the static + gripper cameras.
-Iter 3 will rename `CameraRenderer` → `VideoRecorder` to match the
-post-strip responsibility.
+Iter 3 of Task 5: renamed from `CameraRenderer` to `VideoRecorder` and
+moved `video_cfg` from a per-call kwarg on `on_episode_start` to the
+constructor — Protocol shape now matches the plain
+`on_episode_start(episode_id)`. Stripped the legacy `start_video` /
+`write_frame` / `stop_video` aliases (the Manager's deprecated alias
+methods that called them were also dropped in iter 3).
 
 Lifecycle (Renderer Protocol):
-    on_episode_start(eid, video_cfg)  → open writers lazily on first frame
-    on_waypoint(frames)               → write one frame per camera
-    on_episode_end() / close()        → flush + release writers
+    on_episode_start(eid)   → open writers lazily on first frame
+    on_waypoint(frames)     → write one frame per camera
+    on_episode_end()        → flush + release writers
+    close()                 → flush + release writers (idempotent)
+
+Per-step `update_state` / `tick` are no-ops — video reacts to
+lifecycle hooks (and the per-waypoint frame hook) only.
 """
 
 from __future__ import annotations
@@ -28,26 +34,24 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class CameraRenderer:
+class VideoRecorder:
     """Records CALVIN camera streams to MP4 (static overhead + gripper)."""
 
-    def __init__(self, config: Optional[Any] = None) -> None:
+    def __init__(self, video_cfg: Any) -> None:
         """Args:
-            config: `VideoConfig` (or None). Currently unused at construction;
-                video parameters are passed on `on_episode_start(video_cfg=...)`.
-                Stashed so future renderer state can read it without changing
-                the Protocol.
+            video_cfg: `VideoConfig` with `enabled` / `save_path` / `fps` /
+                `codec` / `static_record_width|height` / `static_camera_fov`.
+                Stashed once at construction so per-episode Protocol calls
+                stay parameterless.
         """
-        self.config = config
+        self._cfg = video_cfg
 
-        # Video state (writers are opened lazily on first frame so their
-        # dimensions match the actual data — avoids resize mismatches when
+        # Video state — writers are opened lazily on first frame so their
+        # dimensions match the actual data (avoids resize mismatches when
         # the env upsamples gripper frames to match static resolution).
         self._video_writers: Dict[str, Any] = {}
         self._video_writer_sizes: Dict[str, tuple] = {}
         self._video_save_path: Optional[Path] = None
-        self._video_fps: int = 15
-        self._video_codec: str = "mp4v"
         self._video_episode_id: int = 0
         self._static_record_size: Optional[tuple] = None
 
@@ -67,22 +71,25 @@ class CameraRenderer:
         """Flush + release any open video writers."""
         self._stop_video()
 
-    def on_episode_start(self, episode_id: int, *, video_cfg: Any = None) -> None:
-        """Open video writers for a new episode (lazy on first frame).
-
-        `video_cfg` is the resolved `VideoConfig` (Manager passes it on
-        dispatch). If `video_cfg.enabled` is False, this is a no-op.
-        """
-        if video_cfg is None or not video_cfg.enabled:
+    def on_episode_start(self, episode_id: int) -> None:
+        """Prepare a new episode (writers open lazily on first frame)."""
+        if not getattr(self._cfg, "enabled", False):
             return
-        self._start_video(
-            episode_id=episode_id,
-            save_path=video_cfg.save_path,
-            fps=video_cfg.fps,
-            codec=video_cfg.codec,
-            static_record_width=video_cfg.static_record_width,
-            static_record_height=video_cfg.static_record_height,
-        )
+        if not _CV2_AVAILABLE:
+            logger.error(
+                "cv2 not available — video recording disabled. "
+                "Install opencv-python."
+            )
+            return
+
+        self._stop_video()  # release any open writers first
+        self._video_save_path = Path(self._cfg.save_path)
+        self._video_save_path.mkdir(parents=True, exist_ok=True)
+        self._video_episode_id = episode_id
+
+        w = self._cfg.static_record_width
+        h = self._cfg.static_record_height
+        self._static_record_size = (w, h) if (w > 0 and h > 0) else None
 
     def on_episode_end(self) -> None:
         """Flush writers at episode end."""
@@ -96,33 +103,6 @@ class CameraRenderer:
     # Video pipeline
     # ------------------------------------------------------------------
 
-    def _start_video(
-        self,
-        episode_id: int,
-        save_path: str,
-        fps: int = 15,
-        codec: str = "mp4v",
-        static_record_width: int = 0,
-        static_record_height: int = 0,
-    ) -> None:
-        """Prepare video recording for an episode (writers open on first frame)."""
-        if not _CV2_AVAILABLE:
-            logger.error(
-                "cv2 not available — video recording disabled. Install opencv-python."
-            )
-            return
-
-        self._stop_video()  # release any open writers first
-        self._video_save_path = Path(save_path)
-        self._video_save_path.mkdir(parents=True, exist_ok=True)
-        self._video_fps = fps
-        self._video_codec = codec
-        self._video_episode_id = episode_id
-        if static_record_width > 0 and static_record_height > 0:
-            self._static_record_size = (static_record_width, static_record_height)
-        else:
-            self._static_record_size = None
-
     def _open_writer(self, cam_key: str, frame: np.ndarray) -> Optional[Any]:
         """Open a cv2.VideoWriter for `cam_key`, sized to match the frame."""
         if not _CV2_AVAILABLE or self._video_save_path is None:
@@ -134,8 +114,8 @@ class CameraRenderer:
 
         filename = f"episode_{self._video_episode_id:04d}_{cam_key}.mp4"
         out_path = self._video_save_path / filename
-        fourcc = cv2.VideoWriter_fourcc(*self._video_codec)
-        writer = cv2.VideoWriter(str(out_path), fourcc, self._video_fps, (w, h))
+        fourcc = cv2.VideoWriter_fourcc(*self._cfg.codec)
+        writer = cv2.VideoWriter(str(out_path), fourcc, self._cfg.fps, (w, h))
         if not writer.isOpened():
             logger.warning(f"Failed to open video writer for {cam_key} at {out_path}")
             return None
@@ -184,19 +164,3 @@ class CameraRenderer:
         if img.dtype != np.uint8:
             return (np.clip(img, 0.0, 1.0) * 255).astype(np.uint8)
         return img
-
-    # ------------------------------------------------------------------
-    # Legacy aliases — preserved through iter 2 for `run_experiment.py`'s
-    # `viz_manager.start_recording/record_step/stop_recording` deprecated
-    # paths. Iter 3 removes both these aliases and the Manager methods that
-    # call them.
-    # ------------------------------------------------------------------
-
-    def start_video(self, **kwargs: Any) -> None:
-        self._start_video(**kwargs)
-
-    def write_frame(self, obs_rgb: Dict[str, np.ndarray]) -> None:
-        self._write_frame(obs_rgb)
-
-    def stop_video(self) -> None:
-        self._stop_video()
