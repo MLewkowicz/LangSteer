@@ -162,23 +162,14 @@ class LiveCostmapWindow:
     # Public API
     # ------------------------------------------------------------------
 
-    def update_state(self, value_map: Any, ee_pos: Any,
-                     target: Any, objects: Optional[List],
-                     step: int, stage_idx: int, num_stages: int,
-                     instruction: str = '',
-                     primitive: Optional[str] = None) -> None:
-        """Stash the latest state. Cheap — actual draw happens in tick()."""
-        self._state = {
-            'value_map': value_map,
-            'ee_pos': ee_pos,
-            'target': target,
-            'objects': objects,
-            'step': step,
-            'stage_idx': stage_idx,
-            'num_stages': num_stages,
-            'instruction': instruction,
-            'primitive': primitive,
-        }
+    def update_state(self, state: dict) -> None:
+        """Stash the latest state. Cheap — actual draw happens in tick().
+
+        `state` is the steering snapshot dict (see `Renderer` Protocol). Keys
+        consumed: value_map, ee_pos, target, objects, step, stage_idx,
+        num_stages, instruction, primitive. Extra keys are ignored.
+        """
+        self._state = dict(state)
 
     def tick(self) -> None:
         """Re-render the figure and pump Tk events. Throttled by refresh_interval."""

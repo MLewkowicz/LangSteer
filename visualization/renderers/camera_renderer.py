@@ -246,3 +246,56 @@ class CameraRenderer:
             logger.info(f"Finished recording {cam_key}")
         self._video_writers.clear()
         self._video_writer_sizes.clear()
+
+    # ------------------------------------------------------------------
+    # Renderer Protocol adapters (Task 5 iter 1 — additive)
+    #
+    # The Protocol methods route through the existing legacy API so the
+    # rewrite of VisualizationManager can dispatch uniformly. The legacy
+    # methods (`start_video`, `write_frame`, `stop_video`, `reset`,
+    # `render_step`, `display_cameras`) are preserved untouched in iter 1.
+    # Iter 3 strips the image-saving + matplotlib display paths and renames
+    # this class to `VideoRecorder`.
+    # ------------------------------------------------------------------
+
+    def update_state(self, state: dict) -> None:
+        """No-op — CameraRenderer reacts to lifecycle hooks (`on_episode_*`,
+        `on_waypoint`), not per-step state."""
+        # Stashed for future use (e.g. iter 3 may attach metadata to frames).
+        self._last_state = state
+
+    def tick(self) -> None:
+        """No-op — frames are written via `on_waypoint`, not `tick()`."""
+        pass
+
+    def close(self) -> None:
+        """Flush any open video writers."""
+        self.stop_video()
+
+    def on_episode_start(self, episode_id: int, *, video_cfg=None) -> None:
+        """Start video recording for a new episode.
+
+        `video_cfg` is the resolved `VideoConfig` (the Manager passes it in
+        on dispatch). If omitted, the renderer falls back to its
+        constructor-time config (legacy path used by `Manager.start_recording`).
+        """
+        if video_cfg is None:
+            return  # legacy `Manager.start_recording` handles this path
+        if not video_cfg.enabled:
+            return
+        self.start_video(
+            episode_id=episode_id,
+            save_path=video_cfg.save_path,
+            fps=video_cfg.fps,
+            codec=video_cfg.codec,
+            static_record_width=video_cfg.static_record_width,
+            static_record_height=video_cfg.static_record_height,
+        )
+
+    def on_episode_end(self) -> None:
+        """Flush video writers at episode end."""
+        self.stop_video()
+
+    def on_waypoint(self, frames: dict) -> None:
+        """Write one frame per camera at sub-step (per-waypoint) granularity."""
+        self.write_frame(frames)
