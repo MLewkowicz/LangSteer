@@ -3,7 +3,7 @@
         "P1": "push the drawer",
         "P2": "grasp the drawer handle, then close it",
         "P3": "Gently push the handle of the wooden cabinet drawer until it is completely shut.",
-        "P4": "Close the compartment."
+        "P4": "Close it."
     },
     "open_drawer": {
         "P1": "pull the drawer",

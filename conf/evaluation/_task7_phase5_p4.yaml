@@ -1,0 +1,62 @@
+# Task 7 Phase 5 P4 perturbed eval — VLM grounding ON.
+# 28 non-rotation tasks at --num-episodes 10. Per-task scope is filtered by
+# conf/evaluation/p4_valid_indices.json (user-labeled at num_episodes=10).
+# Effective per-task ep count varies: 1-10 depending on how many starts the
+# user judged P4-resolvable.
+#
+# Computed total scope: 90 episodes across 28 tasks.
+
+condition_name: "Task 7 Phase 5 P4 perturbed (28 tasks, VLM on)"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/task7_phase5_p4_cache
+  scene_grounding.enabled: true
+
+tasks:
+  # Push (6)
+  - push_red_block_right
+  - push_red_block_left
+  - push_blue_block_right
+  - push_blue_block_left
+  - push_pink_block_right
+  - push_pink_block_left
+  # Slider (2)
+  - move_slider_left
+  - move_slider_right
+  # Drawer (2)
+  - open_drawer
+  - close_drawer
+  # Lift from table (3)
+  - lift_red_block_table
+  - lift_blue_block_table
+  - lift_pink_block_table
+  # Lift from slider (3)
+  - lift_red_block_slider
+  - lift_blue_block_slider
+  - lift_pink_block_slider
+  # Lift from drawer (3)
+  - lift_red_block_drawer
+  - lift_blue_block_drawer
+  - lift_pink_block_drawer
+  # Place (2)
+  - place_in_slider
+  - place_in_drawer
+  # Push into drawer (1)
+  - push_into_drawer
+  # Stack/unstack (2)
+  - stack_block
+  - unstack_block
+  # Lights (4)
+  - turn_on_lightbulb
+  - turn_off_lightbulb
+  - turn_on_led
+  - turn_off_led

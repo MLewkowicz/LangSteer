@@ -1,0 +1,64 @@
+# Task 7 Phase 5 canonical eval — 28×5, VLM grounding OFF.
+# Per user option (A) split: canonical with VLM off (effectively Phase 1.5
+# behavior — text-only composer); P4 perturbed with VLM on (separate YAML).
+#
+# Task list matches the 3b iter-5 baseline scope (28 tasks, NO rotations)
+# so per-task pass rates compare apples-to-apples against 3b's 73/140 = 52.1%
+# and 3b-final-v3's 76/140 = 54.3%. Rotations are excluded because steering
+# guidance doesn't materially help them (3b §2.0a — rotate_* tasks were
+# never in the 28-task acceptance baseline).
+
+condition_name: "Task 7 Phase 5 canonical (28x5, VLM off)"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/task7_phase5_canonical_cache
+  scene_grounding.enabled: false
+
+tasks:
+  # Push (6)
+  - push_red_block_right
+  - push_red_block_left
+  - push_blue_block_right
+  - push_blue_block_left
+  - push_pink_block_right
+  - push_pink_block_left
+  # Slider (2)
+  - move_slider_left
+  - move_slider_right
+  # Drawer (2)
+  - open_drawer
+  - close_drawer
+  # Lift from table (3)
+  - lift_red_block_table
+  - lift_blue_block_table
+  - lift_pink_block_table
+  # Lift from slider (3)
+  - lift_red_block_slider
+  - lift_blue_block_slider
+  - lift_pink_block_slider
+  # Lift from drawer (3)
+  - lift_red_block_drawer
+  - lift_blue_block_drawer
+  - lift_pink_block_drawer
+  # Place (2)
+  - place_in_slider
+  - place_in_drawer
+  # Push into drawer (1)
+  - push_into_drawer
+  # Stack/unstack (2)
+  - stack_block
+  - unstack_block
+  # Lights (4)
+  - turn_on_lightbulb
+  - turn_off_lightbulb
+  - turn_on_led
+  - turn_off_led

@@ -1,0 +1,778 @@
+{
+  "condition_name": "Task 7 Phase 5 P4 perturbed (28 tasks, VLM on)",
+  "seed": 42,
+  "max_steps": 360,
+  "perturbation_axis": "P4",
+  "tasks": {
+    "push_red_block_right": {
+      "instruction": "Slide the block right.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 2357,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 45132,
+          "success": true,
+          "steps": 11,
+          "reward": 0.0
+        }
+      ]
+    },
+    "push_red_block_left": {
+      "instruction": "Push the block left.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 36995,
+          "success": true,
+          "steps": 1,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 45209,
+          "success": true,
+          "steps": 12,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 37003,
+          "success": true,
+          "steps": 1,
+          "reward": 0.0
+        }
+      ]
+    },
+    "push_blue_block_right": {
+      "instruction": "Slide the block right.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 21582,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 21720,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 21581,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "push_blue_block_left": {
+      "instruction": "Push the block left.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 32293,
+          "success": true,
+          "steps": 4,
+          "reward": 0.0
+        }
+      ]
+    },
+    "push_pink_block_right": {
+      "instruction": "Slide the block right.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 414511,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "push_pink_block_left": {
+      "instruction": "Push the block left.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 19978,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 414588,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "move_slider_left": {
+      "instruction": "Move the sliding door.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 413580,
+          "success": true,
+          "steps": 9,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 14797,
+          "success": true,
+          "steps": 3,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 32510,
+          "success": true,
+          "steps": 3,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 3,
+          "source_episode_id": 14797,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 4,
+          "source_episode_id": 413592,
+          "success": true,
+          "steps": 4,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 5,
+          "source_episode_id": 232554,
+          "success": true,
+          "steps": 11,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 6,
+          "source_episode_id": 237523,
+          "success": true,
+          "steps": 10,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 7,
+          "source_episode_id": 242972,
+          "success": true,
+          "steps": 3,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 8,
+          "source_episode_id": 32510,
+          "success": true,
+          "steps": 3,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 9,
+          "source_episode_id": 13800,
+          "success": true,
+          "steps": 2,
+          "reward": 0.0
+        }
+      ]
+    },
+    "move_slider_right": {
+      "instruction": "Push the door.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 235568,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 227323,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 27723,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 3,
+          "source_episode_id": 243620,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 4,
+          "source_episode_id": 227323,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 5,
+          "source_episode_id": 43522,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 6,
+          "source_episode_id": 409787,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 7,
+          "source_episode_id": 50048,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 8,
+          "source_episode_id": 29889,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 9,
+          "source_episode_id": 3569,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "open_drawer": {
+      "instruction": "Open it.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 405001,
+          "success": true,
+          "steps": 3,
+          "reward": 0.0
+        }
+      ]
+    },
+    "close_drawer": {
+      "instruction": "Close it.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 49709,
+          "success": true,
+          "steps": 8,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 6879,
+          "success": true,
+          "steps": 16,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 26179,
+          "success": true,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 3,
+          "source_episode_id": 6877,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 4,
+          "source_episode_id": 4603,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 5,
+          "source_episode_id": 236204,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 6,
+          "source_episode_id": 18045,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 7,
+          "source_episode_id": 11439,
+          "success": true,
+          "steps": 7,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 8,
+          "source_episode_id": 232801,
+          "success": true,
+          "steps": 13,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 9,
+          "source_episode_id": 28042,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "lift_red_block_table": {
+      "instruction": "Lift a block from the table.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 27788,
+          "success": true,
+          "steps": 11,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 417844,
+          "success": true,
+          "steps": 10,
+          "reward": 0.0
+        }
+      ]
+    },
+    "lift_blue_block_table": {
+      "instruction": "Lift a block from the table.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 985,
+          "success": true,
+          "steps": 4,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 987,
+          "success": true,
+          "steps": 4,
+          "reward": 0.0
+        }
+      ]
+    },
+    "lift_pink_block_table": {
+      "instruction": "Lift a block from the table.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 408559,
+          "success": true,
+          "steps": 12,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 39733,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 24290,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "lift_red_block_slider": {
+      "instruction": "Lift the block in the cabinet.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 43402,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 52469,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 10277,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "lift_blue_block_slider": {
+      "instruction": "Lift the block in the cabinet.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 6056,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 403333,
+          "success": true,
+          "steps": 4,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 26917,
+          "success": true,
+          "steps": 6,
+          "reward": 0.0
+        }
+      ]
+    },
+    "lift_pink_block_slider": {
+      "instruction": "Lift the block in the cabinet.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 416802,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 239183,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 38650,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "lift_red_block_drawer": {
+      "instruction": "Pick up the block from the drawer.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 402064,
+          "success": true,
+          "steps": 6,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 412467,
+          "success": true,
+          "steps": 6,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 416466,
+          "success": true,
+          "steps": 5,
+          "reward": 0.0
+        }
+      ]
+    },
+    "lift_blue_block_drawer": {
+      "instruction": "Pick up the block from the drawer.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 228124,
+          "success": true,
+          "steps": 10,
+          "reward": 0.0
+        }
+      ]
+    },
+    "lift_pink_block_drawer": {
+      "instruction": "Pick up the block from the drawer.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 23488,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 7749,
+          "success": true,
+          "steps": 6,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 22071,
+          "success": true,
+          "steps": 7,
+          "reward": 0.0
+        }
+      ]
+    },
+    "place_in_slider": {
+      "instruction": "Place the object inside.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 49932,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "place_in_drawer": {
+      "instruction": "Put it away.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 233931,
+          "success": true,
+          "steps": 3,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 10168,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "push_into_drawer": {
+      "instruction": "Push it in.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 411068,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "stack_block": {
+      "instruction": "Stack them.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 35398,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 13725,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 13725,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "unstack_block": {
+      "instruction": "Separate them.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 5643,
+          "success": true,
+          "steps": 2,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 29542,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 3406,
+          "success": true,
+          "steps": 4,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 3,
+          "source_episode_id": 412273,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 4,
+          "source_episode_id": 29542,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 5,
+          "source_episode_id": 8671,
+          "success": true,
+          "steps": 4,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 6,
+          "source_episode_id": 416971,
+          "success": true,
+          "steps": 3,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 7,
+          "source_episode_id": 29529,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 8,
+          "source_episode_id": 29529,
+          "success": true,
+          "steps": 4,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 9,
+          "source_episode_id": 416968,
+          "success": true,
+          "steps": 4,
+          "reward": 0.0
+        }
+      ]
+    },
+    "turn_on_lightbulb": {
+      "instruction": "Turn on the light.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 14482,
+          "success": true,
+          "steps": 3,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 30653,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "turn_off_lightbulb": {
+      "instruction": "Turn off the light.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 52004,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "turn_on_led": {
+      "instruction": "Turn on the light.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 227910,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 1,
+          "source_episode_id": 222347,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        },
+        {
+          "episode_idx": 2,
+          "source_episode_id": 414808,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    },
+    "turn_off_led": {
+      "instruction": "Turn off the light.",
+      "episodes": [
+        {
+          "episode_idx": 0,
+          "source_episode_id": 240197,
+          "success": false,
+          "steps": 18,
+          "reward": 0.0
+        }
+      ]
+    }
+  }
+}
