@@ -32,6 +32,8 @@ dependencies = [
     "openai>=2.27.0",
     "blosc>=1.11.4",
     "wandb>=0.25.1",
+    "h5py>=3.16.0",
+    "opencv-python-headless>=4.13.0.92",
 ]
 
 [dependency-groups]

@@ -1,0 +1,80 @@
+# 3D Diffuser Actor Training — Primitive + Object Conditioning, real-world Franka
+# Inherits from the CALVIN primitive_object recipe; overrides only paths + small
+# tuning knobs that differ for the 28-episode wrist-ZED + overhead teleop set
+# in /home/clear/Documents/michal/realworld_3da.
+#
+# Prerequisites:
+#   1. Edit /home/clear/Documents/michal/realworld_annotations.json so each
+#      episode has the correct primitive (grasp/push/pull/place/rotate) and
+#      object (block / blue_block / drawer_handle / led_button /
+#      lightbulb_switch / pink_block / red_block / slider_handle).
+#   2. uv run python scripts/convert_realworld_for_diffuser_actor.py \
+#         --raw_dir /home/clear/Documents/michal/replayed \
+#         --save_path /home/clear/Documents/michal/realworld_3da \
+#         --annotations /home/clear/Documents/michal/realworld_annotations.json
+#   3. uv run python scripts/train_diffuser_actor.py \
+#         training=diffuser_actor_realworld_primitive_object
+
+defaults:
+  - diffuser_actor_primitive_object
+
+policy:
+  # Real ee deltas across the captured 28 episodes are well within the CALVIN
+  # bounds (~0.25m), so reuse them. Tighten later by computing actual relative
+  # trajectory bounds if normalisation is too loose.
+  gripper_loc_bounds: [[-0.3021, -0.2569, -0.2156], [0.3613, 0.3377, 0.1837]]
+
+  # Fresh-from-scratch run on real-world wine-glass pick-and-place: the only
+  # primitives present are grasp/place and the only object is the wine glass,
+  # so the model's embedding tables should be sized to that. These overrides
+  # bypass the default CALVIN vocabs (5 primitives × 8 objects) baked into
+  # DiffuserActorTrainingWorkspace.
+  num_primitives: 2
+  primitive_vocab:
+    grasp: 0
+    place: 1
+  num_objects: 1
+  object_vocab:
+    glass: 0
+
+dataset:
+  train_path: "/home/clear/Documents/michal/realworld_3da/training"
+  val_path:   "/home/clear/Documents/michal/realworld_3da/validation"
+  instructions_path: null
+  primitive_ann_path_train: "/home/clear/Documents/michal/realworld_3da/training/lang_annotations/primitive_object_lang_ann.npy"
+  primitive_ann_path_val:   "/home/clear/Documents/michal/realworld_3da/validation/lang_annotations/primitive_object_lang_ann.npy"
+  taskvar:
+    - ["D", 0]
+  # Episodes are 14-60 keyframes long; max_episode_length=5 keeps the random
+  # chunk slicing in CalvinDataset.__getitem__ stable on short episodes.
+  max_episode_length: 5
+  max_episodes_per_task: -1
+  cache_size: 32
+  cache_size_val: 8
+  image_rescale: "0.85,1.15"   # tighter augmentation; we have ~28 episodes total
+  dense_interpolation: true
+  interpolation_length: 20
+  relative_action: true
+
+# 28 episodes is tiny; cap iters at 30k (~3-4h on a single GPU) and validate often.
+train_iters: 30000
+batch_size: 8
+batch_size_val: 2
+num_workers: 2
+lr: 1.0e-4              # lower than CALVIN's 3e-4 — small dataset, easy to overfit
+wd: 5.0e-3
+accumulate_grad_batches: 1
+lr_warmup_steps: 500
+grad_clip: 1.0
+
+val_freq: 250
+log_freq: 10
+
+use_ema: true
+ema_power: 0.75
+ema_max_value: 0.9999
+
+checkpoint_dir: "outputs/checkpoints/diffuser_actor_realworld_primitive_object"
+experiment_name: "diffuser_actor_realworld_primitive_object_${now:%Y%m%d_%H%M%S}"
+use_wandb: true
+wandb_project: "langsteer_diffuser_actor"
