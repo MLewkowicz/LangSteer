@@ -76,14 +76,14 @@ class IsaacSimEnvironment(BaseEnvironment):
             return Observation(
                 rgb={
                     "static": processed["rgb_static"],
-                    "wrist": processed["rgb_wrist"],
+                    "gripper": processed["rgb_wrist"],
                 },
                 proprio=processed["robot_obs"],
                 ee_pose=processed["ee_pose"],
                 instruction=self._instruction,
                 depth={
                     "static": processed["pcd_static"],
-                    "wrist": processed["pcd_wrist"],
+                    "gripper": processed["pcd_wrist"],
                 },
             )
         else:

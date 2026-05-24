@@ -1,0 +1,53 @@
+# Diffuser Actor training on Isaac Sim teleop demos (primitive+object policy).
+#
+# Inherits hyperparameters from diffuser_actor_primitive_object (which itself
+# inherits from diffuser_actor_calvin) and swaps the dataset source to the
+# HDF5 episodes produced by scripts/teleop_isaac.py + IsaacSimRecorder.
+#
+# Prereqs:
+#   1. Record demos:  uv run python scripts/teleop_isaac.py object=mug ...
+#   2. (optional) Recalibrate gripper_loc_bounds in conf/policy/diffuser_actor_isaac.yaml.
+#   3. uv run python scripts/train_diffuser_actor.py training=diffuser_actor_isaac
+
+defaults:
+  - diffuser_actor_primitive_object
+
+policy:
+  use_primitive_id: true
+  num_primitives: 2        # ISAAC_PRIMITIVE_VOCAB: grasp=0, place=1
+  use_object_id: true
+  num_objects: 2           # ISAAC_OBJECT_VOCAB: bowl=0, mug=1
+  lang_enhanced: true
+
+dataset:
+  # Selects IsaacDataset inside DiffuserActorTrainingWorkspace._get_datasets.
+  type: isaac
+
+  # Directory of HDF5 episodes written by IsaacSimRecorder.  Override per-run:
+  #   training=diffuser_actor_isaac dataset.train_path=data/mug_demos
+  train_path: "${oc.env:ISAAC_DEMO_DIR,/home/mlewkowicz/LangSteer/data/isaac_sim_demos}/training"
+  val_path: "${oc.env:ISAAC_DEMO_DIR,/home/mlewkowicz/LangSteer/data/isaac_sim_demos}/validation"
+
+  # IsaacDataset-specific knobs (see training/policies/diffuser_actor/dataset_isaac.py)
+  max_episode_length: 5         # frames per __getitem__ chunk (= CALVIN default)
+  execute_every: 4              # next-keypose lookahead (matches CALVIN execute_every)
+  interpolation_length: 20      # traj_len of the low-level diffusion target
+  gripper_close_threshold: 0.04 # gripper_width < this → primitive switches to `place`
+  max_episodes_train: -1
+  max_episodes_val: -1
+
+  # CalvinDataset-only knobs — left for the inherited config but unused by
+  # IsaacDataset.  Listed explicitly so future readers know they're inert.
+  instructions_path: null
+  primitive_ann_path_train: null
+  primitive_ann_path_val: null
+  taskvar: null
+
+# Smaller batch / shorter run than CALVIN — single-arm demos, single object
+# to start, so the model converges fast on a handful of episodes.  Override
+# from the CLI for production runs.
+train_iters: 50000
+batch_size: 8
+
+checkpoint_dir: "outputs/checkpoints/diffuser_actor_isaac"
+experiment_name: "diffuser_actor_isaac_${now:%Y%m%d_%H%M%S}"

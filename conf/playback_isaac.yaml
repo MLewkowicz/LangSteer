@@ -1,0 +1,46 @@
+# Isaac Sim HDF5 episode playback configuration.
+#
+# Replays a recorded episode by feeding ee_pose waypoints back through the
+# same diff-IK / PD controller that captured them.  Inherits scene + camera
+# config from conf/env/isaac_sim.yaml so the playback scene matches what
+# was recorded.
+#
+# Usage:
+#   uv run python scripts/playback_isaac.py episode_path=data/isaac_sim_demos/grasp_rim.h5
+#   uv run python scripts/playback_isaac.py episode_path=... task_name=pick_up_red_block
+#   uv run python scripts/playback_isaac.py episode_path=... realtime_pacing=true
+
+defaults:
+  - env: isaac_sim
+  - _self_
+
+# Required: path to the HDF5 episode to replay.
+episode_path: ???
+
+# Override the HDF5's task_name attribute.  If null and the HDF5 attr is
+# non-empty, that task's objects are spawned via get_task_config().  If
+# null and the HDF5 attr is empty, no task objects are spawned (useful
+# when replaying motion-only demos in the bare cabinet scene).
+task_name: null
+
+# Physics sub-steps per recorded frame.  Match teleop's default so the
+# controller dynamics during playback mirror those at record time.
+physics_substeps: 2
+
+# Steps to hold the arm at the recorded start pose before beginning
+# playback — lets objects + arm settle.
+start_settle_steps: 60
+
+# If true, sleep between frames to match the wall-clock dt recorded in
+# the HDF5 timestamps.  Default false — Isaac Sim runs as fast as
+# physics allows.
+realtime_pacing: false
+
+# Threshold on ee_pose[:,6] (gripper finger sum, meters) above which the
+# gripper is considered open.  Open = 0.08, Closed = 0.0.
+gripper_open_threshold: 0.04
+
+# Live camera preview — same mechanism as teleop_isaac.py.
+preview_cameras: true
+preview_path: /tmp/langsteer_playback_preview.png
+preview_every: 2

@@ -239,9 +239,14 @@ def prepare_pcd_images(
     pcd_static, pcd_wrist (H,W,3), robot_obs, ee_pose.
     """
     cam_names = list(rgb.keys())
-    # Expect "static" and "wrist" cameras
+    # Expect "static" and "gripper" cameras (also accepts legacy "wrist" name)
     static_name = "static" if "static" in cam_names else cam_names[0]
-    wrist_name = "wrist" if "wrist" in cam_names else (cam_names[1] if len(cam_names) > 1 else cam_names[0])
+    for _wrist_candidate in ("gripper", "wrist"):
+        if _wrist_candidate in cam_names:
+            wrist_name = _wrist_candidate
+            break
+    else:
+        wrist_name = cam_names[1] if len(cam_names) > 1 else cam_names[0]
 
     # Per-pixel PCD images
     pcd_static = deproject_depth_per_pixel(

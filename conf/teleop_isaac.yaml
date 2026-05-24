@@ -1,0 +1,95 @@
+# Isaac Sim SpaceMouse teleoperation configuration
+#
+# Inherits the scene + camera config from conf/env/isaac_sim.yaml so the
+# teleop scene matches what the policy sees at inference time.
+#
+# Override anything from the CLI:
+#   uv run python scripts/teleop_isaac.py instruction="put plate in cabinet"
+
+defaults:
+  - env: isaac_sim
+  - _self_
+
+# Free-form language label saved with each recorded demo.
+instruction: ""
+task_name: ""
+
+# Target object for the primitive+object policy.  Persisted as an HDF5 attr
+# on each saved episode; IsaacDataset looks it up in ISAAC_OBJECT_VOCAB to
+# produce the object_id conditioning tensor at training time.  Append-only
+# vocab — see training/policies/diffuser_actor/dataset_isaac.py.
+object: mug
+
+# Gripper-width threshold (m) below which the gripper is considered closed.
+# Used by IsaacDataset to auto-splice each episode into grasp → place
+# primitives at the first frame where ee_pose[:, 6] < this value.
+gripper_close_threshold: 0.04
+
+# Output directory for recorded HDF5 episodes
+data_dir: data/isaac_sim_demos
+num_episodes: 0             # 0 = unlimited; press Ctrl-C to quit
+
+# After each saved episode, snap the robot back to its USD-authored joint
+# defaults so the next demo starts from the same arm pose.  Objects in the
+# scene are NOT moved — reposition the mug manually in the Isaac GUI between
+# episodes to vary the starting condition (good for data diversity).  Set
+# false if you want full manual control of the between-episode state.
+auto_reset: true
+reset_settle_steps: 20    # physics ticks to let the articulation settle
+
+# Optional base name for saved episodes (no extension).  If set, the first
+# recording saves as `{episode_name}.h5`; later recordings in the same
+# session get `_2`, `_3`, … suffixes to avoid clobbering.  When null, falls
+# back to timestamp naming (`episode_YYYYMMDD_HHMMSS.h5`).
+#   ~/isaac-sim/python.sh scripts/teleop_isaac.py episode_name=pick_red_block
+episode_name: null
+
+# Physics sub-steps per control tick.  Default Isaac physics dt = 1/60 s.
+# At a 30 Hz control loop, 2 sub-steps per tick keeps simulation in
+# real-time (33.33 ms simulated per 33.33 ms wall) — fixes the "delayed"
+# feel where the arm lags user input.
+physics_substeps: 2
+
+# Cartesian velocity scaling (SpaceMouse raw [-1,1] → metres / radians per tick).
+# Diff-IK: max nominal EE speed ≈ linear_scale * 30 Hz. Default = 3 cm/s.
+# OSC: error fed into impedance; tune in conjunction with osc_kp_pos.
+linear_scale: 0.01
+angular_scale: 0.015
+
+# OSC-only: maximum distance the controller's target may "lead" the
+# actual EE pose (m).  Lower = arm stops sooner after release.
+target_lead_max: 0.05
+
+# SpaceMouse input filter
+#
+# The teleop controller AUTO-DETECTS the Franka's orientation in the USD
+# (via scene.get_base_frame_pose()) and rotates puck inputs by that base
+# rotation each tick — so puck-forward always means "robot-forward"
+# regardless of how you've placed the robot in the world.  No config
+# needed for that.
+#
+# If puck axes themselves feel mirrored, override `linear_remap` /
+# `angular_remap` here (3x3 matrices, raw puck → robot base frame).
+# Otherwise leave them as-is — the script defaults handle the hardware
+# convention for the standard 3Dconnexion SpaceMouse.
+spacemouse:
+  control_rate: 120     # Hz of the teleop control loop
+  translation_deadband: 0.04
+  rotation_deadband: 0.04
+  smoothing: 0.0            # exponential α (lower = snappier, higher = smoother)
+
+  # SpaceMouse-axis → robot-base-frame remap matrices.  These align the
+  # 3Dconnexion puck's raw (x, y, z) / (roll, pitch, yaw) with the
+  # Franka's local frame conventions; NOT for handling robot rotation in
+  # the USD (that's auto-detected via scene.get_base_frame_pose()).
+  # Override from the CLI to tune rotation/translation feel:
+  #   spacemouse.angular_remap='[[1,0,0],[0,1,0],[0,0,1]]'   # identity
+  #   spacemouse.angular_remap='[[0,1,0],[-1,0,0],[0,0,-1]]' # flip yaw
+  linear_remap:
+    - [0, 1, 0]
+    - [-1, 0, 0]
+    - [0, 0, 1]
+  angular_remap:
+    - [1, 0, 0]
+    - [0, 1, 0]
+    - [0, 0, -1]

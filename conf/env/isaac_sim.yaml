@@ -1,8 +1,62 @@
-# Isaac Sim Tabletop Environment Configuration
+# Isaac Sim Kitchen Environment Configuration
+#
+# Loads LangSteerCabinet.usd as authored.  The Franka must be placed
+# inside the USD by the user (via Isaac Sim GUI) — this config does NOT
+# spawn or reposition the robot.
 
 name: isaac_sim
 
-# Task specification — must be registered in envs/isaac_sim_utils/task_configs.py
+# USD scene — null auto-resolves to LangSteerCabinet.usd in repo root
+usd_path: null
+
+# Optional: drop the legacy Cortado prim if it's still in the USD.
+# Idempotent — silently skips if the prim has already been removed.
+hide_cortado: true
+cortado_prim_path: /World/cortado_imported
+
+# Path of the Franka articulation in the USD (placed by the user)
+robot_prim_path: /World/Franka
+
+# End-effector reference prim — between the fingers (standard Franka tool center)
+ee_prim_path: /World/Franka/panda_hand/tool_center
+
+# Controller selection — "diff_ik" (default, position-control + Jacobian
+# damped LS) or "osc" (Cartesian impedance via joint torques).  diff_ik
+# is the working baseline; osc is robosuite-style but harder to tune.
+controller_type: diff_ik
+
+# Common to both controllers
+ik_body_name: panda_hand        # rigid body whose Jacobian represents EE motion
+
+# Differential-IK parameters
+ik_damping: 0.1                 # damped-LS λ — ↑ near singularities, ↓ for snap
+ik_max_step_pos: 0.05           # safety cap on per-tick position delta (m)
+ik_max_step_rot: 0.5            # safety cap on per-tick rotation delta (rad)
+gravity_comp: true              # feedforward gravity torques on top of PD —
+                                #  prevents idle sag and reduces tracking lag
+
+# Gripper drive
+# Default Franka USD ships with kp=400 / kd=80 on finger_joint1 and ZERO
+# on finger_joint2 — that gives only ~1-2 N grasp force, way too weak
+# to pick up plates.  Override here.  10 000 / 200 gives 30-50 N at
+# typical closing distances; raise gripper_grasp_effort for an
+# additional constant inward squeeze.
+gripper_kp: 10000.0
+gripper_kd: 200.0
+gripper_grasp_effort: 5.0       # extra inward force when closed (N·m equiv);
+                                #  set 0 to disable, raise for heavier objects
+
+# OSC parameters (only used when controller_type=osc)
+osc_kp_pos: 200.0               # Cartesian position stiffness (mass-weighted)
+osc_kp_rot: 30.0                # Cartesian rotation stiffness (mass-weighted)
+# Damping defaults to 2*sqrt(Kp) (critical damping for unit mass) when unset.
+# osc_kd_pos: 28.28
+# osc_kd_rot: 10.95
+osc_max_pos_err: 0.10           # cap on Cartesian position error (m)
+osc_max_rot_err: 0.50           # cap on Cartesian rotation error (rad)
+osc_mx_rcond: 0.001             # damping for task-space inertia inverse
+
+# Task — registered in envs/isaac_sim_utils/task_configs.py (optional)
 task: null
 
 # Display
@@ -10,26 +64,34 @@ use_gui: true
 
 # Observation settings
 num_points: 2048
-provide_pcd_images: false  # true for Diffuser Actor (per-pixel PCD images)
+provide_pcd_images: true   # true for Diffuser Actor (per-pixel PCD images)
 
 # Episode settings
 max_steps: 360
-physics_steps_per_action: 10  # Sim steps per EE target command
+physics_steps_per_action: 10
 
-# Scene geometry
-table_size: [0.8, 1.0, 0.02]
-table_position: [0.4, 0.0, 0.4]
-franka_position: [0.0, 0.0, 0.41]
-
-# Cameras
+# Cameras — both 200x200 to match Diffuser Actor input.
+#
+# Camera prims and their poses are authored directly in LangSteerCabinet.usd
+# (parented under /World/Franka so they follow the robot when the robot prim
+# is moved).  This config only references them by prim_path and sets render
+# parameters; pose lives in the USD.
+#
+# To override pose from here instead, add one of:
+#   local_position + local_target       → look-at in the parent's local frame
+#   local_position + local_orientation  → explicit quat (wxyz)
+#   world_position + world_target       → look-at in the world frame
 cameras:
   static:
-    resolution: [256, 256]
-    position: [0.5, 0.0, 1.2]
-    target: [0.4, 0.0, 0.42]
-  wrist:
-    resolution: [128, 128]
+    prim_path: /World/Franka/overhead_cam
+    resolution: [200, 200]
+    focal_length: 1.93
+  gripper:
+    prim_path: /World/Franka/panda_hand/wrist_cam
+    resolution: [200, 200]
+    focal_length: 1.93
+    clipping_range: [0.01, 3.0]
 
 # Workspace bounds (meters, world frame) — used by VoxPoser
-workspace_bounds_min: [-0.4, -0.4, 0.0]
-workspace_bounds_max: [0.4, 0.4, 0.8]
+workspace_bounds_min: [0.0, -0.5, 0.7]
+workspace_bounds_max: [1.0, 0.5, 1.3]

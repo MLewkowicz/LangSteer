@@ -15,13 +15,20 @@ outputs/
 # Data, checkpoints, and caches
 cache/
 checkpoints/
+data/
 tmp/
 wandb/
+
+# Editor / OS scratch
+*.swp
+*.swo
+.DS_Store
 
 # External repos
 calvin/
 3d_diffuser_actor/
 VoxPoser/
+franka-teleop/
 
 # Configs
 .claude/

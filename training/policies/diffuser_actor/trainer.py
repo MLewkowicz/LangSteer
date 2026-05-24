@@ -28,6 +28,7 @@ from typing import Optional
 
 from policies.diffuser_actor_components import DiffuserActor
 from training.policies.diffuser_actor.dataset import CalvinDataset, traj_collate_fn
+from training.policies.diffuser_actor.dataset_isaac import IsaacDataset
 from training.common.checkpoint_util import TopKCheckpointManager
 from training.common.ema_model import EMAModel
 
@@ -245,8 +246,17 @@ class DiffuserActorTrainingWorkspace:
     # ------------------------------------------------------------------
 
     def _get_datasets(self, cfg: DictConfig):
-        """Initialize train and validation datasets."""
+        """Initialize train and validation datasets.
+
+        Dispatches on `cfg.dataset.type`:
+          - "calvin" (default): packaged .dat-based CalvinDataset.
+          - "isaac":            HDF5-based IsaacDataset for Isaac Sim demos.
+        """
         dataset_cfg = cfg.dataset
+        ds_type = str(dataset_cfg.get("type", "calvin")).lower()
+
+        if ds_type == "isaac":
+            return self._get_isaac_datasets(cfg, dataset_cfg)
 
         # CLIP-mode instruction embeddings (.pkl with precomputed features).
         # Skipped entirely in primitive-id mode (model doesn't need them) and
@@ -329,6 +339,39 @@ class DiffuserActorTrainingWorkspace:
             dense_interpolation=dataset_cfg.get("dense_interpolation", True),
             interpolation_length=dataset_cfg.get("interpolation_length", 100),
             relative_action=dataset_cfg.get("relative_action", True),
+        )
+        return train_dataset, val_dataset
+
+    def _get_isaac_datasets(self, cfg: DictConfig, dataset_cfg: DictConfig):
+        """Build IsaacDataset train/val pair from HDF5 demos.
+
+        Isaac demos already carry the per-frame conditioning (primitive-id
+        is derived in-dataset from the gripper-close edge, object-id from
+        the HDF5 `object` attr) — so primitive_ann_path_*, instructions_path,
+        and taskvar are unused on this path.
+        """
+        common_kwargs = dict(
+            nhist=int(self.cfg.policy.get("nhist", 3)),
+            chunk_size=int(dataset_cfg.get("max_episode_length", 5)),
+            execute_every=int(dataset_cfg.get("execute_every", 4)),
+            traj_len=int(dataset_cfg.get("interpolation_length", 20)),
+            gripper_close_threshold=float(
+                dataset_cfg.get("gripper_close_threshold", 0.04)
+            ),
+            return_low_lvl_trajectory=True,
+        )
+
+        train_dataset = IsaacDataset(
+            data_dir=dataset_cfg.train_path,
+            training=True,
+            max_episodes=int(dataset_cfg.get("max_episodes_train", -1)),
+            **common_kwargs,
+        )
+        val_dataset = IsaacDataset(
+            data_dir=dataset_cfg.val_path,
+            training=False,
+            max_episodes=int(dataset_cfg.get("max_episodes_val", -1)),
+            **common_kwargs,
         )
         return train_dataset, val_dataset
 

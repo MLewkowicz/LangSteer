@@ -1,0 +1,59 @@
+# 3D Diffuser Actor Policy — Isaac Sim variant of primitive+object conditioning
+#
+# Trained on Isaac Sim teleop demos via training/diffuser_actor_isaac. Replaces
+# CLIP text embeddings with two small parallel embedding tables sized for the
+# Isaac primitive/object vocabularies in
+# training/policies/diffuser_actor/dataset_isaac.py.
+#
+# IMPORTANT: vocab sizes MUST match ISAAC_PRIMITIVE_VOCAB / ISAAC_OBJECT_VOCAB.
+# When you add a new object, append it alphabetically in the dataset vocab and
+# bump `num_objects` here.
+
+name: diffuser_actor
+
+ckpt_path: "checkpoints/diffuser_actor_isaac.pth"
+device: "cuda"
+
+# Architecture — same as the CALVIN primitive+object variant.  The CLIP-vision
+# backbone, image_size, embedding_dim, etc. are fixed by the encoder geometry
+# (see isaac_integration plan / encoder.py); only the conditioning vocab sizes
+# change between Isaac and CALVIN.
+backbone: clip
+image_size: [256, 256]
+embedding_dim: 192
+num_vis_ins_attn_layers: 2
+use_instruction: true       # reuses the instruction cross-attn pipeline
+use_primitive_id: true
+num_primitives: 2           # ISAAC_PRIMITIVE_VOCAB: grasp=0, place=1
+use_object_id: true
+num_objects: 2              # ISAAC_OBJECT_VOCAB (alphabetical): bowl=0, mug=1
+fps_subsampling_factor: 3
+
+# gripper_loc_bounds — workspace-relative bounds in Isaac coordinates,
+# calibrated from ee_pose[:, :3] across all 83 demos in data/isaac_sim_demos
+# (2026-05-24) + 1 cm buffer on each side.  Action normalization scales
+# Isaac trajectories against this box; recompute and update whenever the
+# robot's mounting position or the table geometry changes.
+gripper_loc_bounds: [[-1.0659, 1.8529, 0.8055], [-0.2167, 2.4055, 1.3562]]
+
+rotation_parametrization: "6D"
+quaternion_format: "wxyz"
+diffusion_timesteps: 25
+nhist: 3
+relative: true
+lang_enhanced: true
+
+# Inference
+pred_horizon: 20
+
+# Camera setup — matches IsaacSimRecorder HDF5 layout.
+cameras: ["static", "gripper"]
+
+# Image preprocessing
+crop_images: true
+
+mask_language: false
+
+# MCMC Langevin corrector (used with steering)
+corrector_steps: 0
+corrector_step_size: 0.001
