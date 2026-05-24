@@ -15,9 +15,31 @@ from plan_utils import get_affordance_map, get_avoidance_map
 # Stages execute sequentially. The next stage activates when the gripper
 # reaches the current stage's affordance basin.
 #
+# ============================================================================
+# HELD-BLOCK RULE — read FIRST, applies BEFORE any in-context example below
+# ============================================================================
+# The scene context block above your query begins with `# Held block: <X>`
+# where X is either a specific color (`red_block` / `blue_block` /
+# `pink_block`) or `none`. This is deterministic robot proprioception
+# (gripper width + block AABB), NOT a VLM perception — it is always correct.
+#
+#   - `# Held block: <color>` → gripper is ALREADY holding that block.
+#     Emit a 1-STAGE place directly. NOT a 2-stage grasp+place. Stage 0 =
+#     (aff_fn, None, 'static', 'place', 'block'). Use the generic 'block'
+#     object slot — runtime resolves it to the held color via the
+#     `_detect_object` held-block fallback. This rule applies to ALL
+#     place-style tasks with a pre-held start (place_in_slider,
+#     place_in_drawer, etc.). The 2-stage grasp+place examples below are
+#     for table-init tasks ONLY.
+#   - `# Held block: none` → no block held. Emit the normal multi-stage
+#     pattern from the in-context examples below.
+#
+# ============================================================================
+# Scene-state-driven disambiguation
+# ============================================================================
 # When the instruction is AMBIGUOUS (e.g. "open it", "close it", "the block"),
-# use the runtime SCENE-STATE BLOCKS (provided as `# Current scene state ...`
-# / `# Scene grounding ...` context above your query) to disambiguate:
+# use the runtime SCENE-STATE BLOCKS (provided as `# Scene grounding ...`
+# context above your query) to disambiguate:
 #   - "Close it" while drawer is open → (push, drawer_handle).
 #   - "Open it" while drawer is closed → (pull, drawer_handle).
 #   - "Pick up the block" when only one block sits on the table → grasp that
@@ -96,21 +118,19 @@ from plan_utils import get_affordance_map, get_avoidance_map
 #   affordance stage providing the spatial target.
 #
 # - For rotate_* tasks, build the target wrist rotation with
-#   rotation_about_axis('z', ±90) composed in the WORLD frame, NOT the gripper's
-#   body frame. CALVIN's success oracle checks the block's WORLD-frame Euler-z
-#   rotation and rejects any motion with significant world x/y tilt. World-frame
-#   rotation is invariant to the gripper's current pose, so it stays clean.
+#   rotation_about_axis('z', ±90) composed in the WORLD frame. Use -90 for
+#   rotate_*_left tasks and +90 for rotate_*_right tasks. World-Z is the
+#   only axis that yaws the gripper in place — X and Y rotate the gripper
+#   off-axis (lay-flat or perpendicular), which is not what rotate_* wants.
 #
 #   ALWAYS use this idiom:
 #     rot_target = compose_rotation(rotation_about_axis('z', 90), current_ee_rotation())
 #   The Rz comes FIRST in compose_rotation (left-multiplication = world frame).
-#   For rotate_*_left use +90°, for rotate_*_right use -90°.
 #
 #   NEVER use the body-frame composition
 #     compose_rotation(current_ee_rotation(), rotation_about_axis(...))
-#   for rotate tasks — it produces a body-frame roll that becomes a wrong-sign
-#   world-z yaw (gripper points down → body-z = -world-z) and any gripper tilt
-#   smears the rotation into world x/y, which the oracle penalizes.
+#   for rotate tasks, and do NOT use the 'x' or 'y' axis — only world-frame Z
+#   produces the pure-yaw rotation we want.
 #
 #   ROTATE IS NOT A LIFT. Both stages of a rotate task use the SAME spatial
 #   affordance (the block center). DO NOT translate the EE upward in stage 2;
@@ -211,11 +231,12 @@ ret_val = [
 #     a lift. Orientation change comes ONLY from rot_target.
 #   - Both stages use 'grasp' so the gripper holds throughout.
 # ============================================================================
-
+# USE THIS EXACT IDIOM FOR ROTATIONS — DO NOT ROTATE AROUND THE X or Y AXIS.
 # Query: twist the brick 90° counterclockwise (left, from above).
-# World-frame +90° about world Z. Stage 1 grasps the block; stage 2 applies the
-# rotation while still holding (primitive='rotate'). For a 90° clockwise (right)
-# twist, mirror with rotation_about_axis('z', -90).
+# World-frame Z is the only axis that yaws the gripper in place (preserves
+# the gripper-down pointing direction). Stage 1 grasps the block; stage 2
+# applies the rotation while still holding (primitive='rotate'). For a 90°
+# clockwise (right) twist, mirror with rotation_about_axis('z', +90).
 movable = parse_query_obj('gripper')
 stage1_aff = get_affordance_map('a point at the center of the red block')
 stage2_aff = get_affordance_map('a point at the center of the red block')
@@ -259,7 +280,7 @@ ret_val = [
 # reference, not an object to grasp.
 movable = parse_query_obj('gripper')
 stage1_aff = get_affordance_map('a point at the center of the pink block')
-stage2_aff = get_affordance_map('a point 5cm above the drawer handle')
+stage2_aff = get_affordance_map('a point at the center of the drawer interior')
 ret_val = [
     (stage1_aff, None, 'track', 'grasp', 'pink_block'),
     (stage2_aff, None, 'static', 'place', 'pink_block'),
@@ -286,7 +307,7 @@ ret_val = [
 movable = parse_query_obj('gripper')
 stage1_aff = get_affordance_map('a point at the center of the blue block')
 stage2_aff = get_affordance_map('a point at the center of the blue block')
-rot_target = compose_rotation(rotation_about_axis('z', 90), current_ee_rotation())
+rot_target = compose_rotation(rotation_about_axis('Z', 90), current_ee_rotation())
 ret_val = [
     (stage1_aff, None, 'track', 'grasp', 'blue_block'),
     (stage2_aff, None, rot_target, 'track', 'rotate', 'blue_block'),
@@ -302,3 +323,6 @@ ret_val = [
     (stage1_aff, None, 'track', 'grasp', 'drawer_handle'),
     (stage2_aff, None, 'static', 'pull',  'drawer_handle'),
 ]
+
+
+USE -90 for LEFT ROTATIONS

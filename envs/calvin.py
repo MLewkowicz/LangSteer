@@ -428,6 +428,16 @@ class CalvinEnvironment(BaseEnvironment):
             'size':          np.array([0.118, 0.061, 0.031]),
             'euler_xyz_deg': np.array([-31.50, 0.0, 0.0]),
         },
+        # Cavity inside the slider cabinet body. `link_idx: -1` is the
+        # playtable's base_link, which is fixed at world origin (see scene
+        # config), so this entry behaves as a world-frame static AABB. The
+        # slider door (`slider`) sits on link 2 and slides independently.
+        'slider_interior': {
+            'link_idx': -1,
+            'rest_position': np.array([-0.0930, 0.0980, 0.4530]),
+            'size':          np.array([0.5450, 0.1460, 0.0250]),
+            'euler_xyz_deg': np.array([0.00, 0.00, 0.00]),
+        },
     }
     # Derived fixtures: small grasp regions computed from a parent link.
     # `offset` and `euler_xyz_deg` are in the parent's local frame, so a handle
@@ -445,6 +455,15 @@ class CalvinEnvironment(BaseEnvironment):
             'parent': 'slider',
             'offset':        np.array([0.0, -0.038, 0.002]),
             'size':          np.array([0.034, 0.066, 0.161]),
+            'euler_xyz_deg': np.array([0.0, 0.0, 0.0]),
+        },
+        # Cavity inside the drawer body — moves with the drawer joint via its
+        # parent, so 'placement targets' translate correctly when the drawer
+        # is partly open.
+        'drawer_interior': {
+            'parent': 'drawer',
+            'offset':        np.array([0.0, 0.0, 0.0]),
+            'size':          np.array([0.40, 0.30, 0.08]),
             'euler_xyz_deg': np.array([0.0, 0.0, 0.0]),
         },
     }
@@ -490,11 +509,18 @@ class CalvinEnvironment(BaseEnvironment):
         #    their own entry).
         for name, override in self._FIXTURE_AABB_OVERRIDES.items():
             link_idx = override['link_idx']
-            link_state = p.getLinkState(
-                self._PLAYTABLE_UID, link_idx,
-                computeForwardKinematics=1, physicsClientId=cid,
-            )
-            frame_origin = np.asarray(link_state[4], dtype=np.float32)
+            if link_idx == -1:
+                # base_link: fixed in the scene config, query base pose.
+                base_pos, _ = p.getBasePositionAndOrientation(
+                    self._PLAYTABLE_UID, physicsClientId=cid,
+                )
+                frame_origin = np.asarray(base_pos, dtype=np.float32)
+            else:
+                link_state = p.getLinkState(
+                    self._PLAYTABLE_UID, link_idx,
+                    computeForwardKinematics=1, physicsClientId=cid,
+                )
+                frame_origin = np.asarray(link_state[4], dtype=np.float32)
             offset = self._fixture_frame_offsets.get(
                 name,
                 override['rest_position'] - frame_origin,  # fallback
@@ -569,6 +595,17 @@ class CalvinEnvironment(BaseEnvironment):
         for name, override in self._FIXTURE_AABB_OVERRIDES.items():
             link_idx = override['link_idx']
             try:
+                if link_idx == -1:
+                    # base_link has no joint; it's fixed in the scene config.
+                    base_pos, _ = p.getBasePositionAndOrientation(
+                        self._PLAYTABLE_UID, physicsClientId=cid,
+                    )
+                    self._fixture_frame_offsets[name] = (
+                        override['rest_position'].astype(np.float32)
+                        - np.asarray(base_pos, dtype=np.float32)
+                    )
+                    continue
+
                 # Snapshot current joint state
                 js = p.getJointState(self._PLAYTABLE_UID, link_idx, physicsClientId=cid)
                 saved_pos, saved_vel = js[0], js[1]

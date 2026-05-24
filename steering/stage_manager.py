@@ -216,6 +216,33 @@ class StageManager:
         object_names = self._lmp_interface.get_object_names()
         set_lmp_objects(self._lmps, object_names)
 
+        # Task 7 post-ship (X) — held-block injection. The VLM at 600×600
+        # overhead can't reliably tag a held block as 'held' (5cm cube
+        # occluded by gripper jaws in the frame). `_get_held_block` reads
+        # gripper width (`robot_obs[6]`) + block AABBs and returns the held
+        # color deterministically. That's robot proprioception, not visual
+        # scene perception — distinct from the scene_state injection
+        # removed in Phase 3. Composer reads `# Held block: ...` to decide
+        # 1-stage place vs 2-stage grasp+place.
+        held_block = self._lmp_interface._get_held_block() if robot_obs is not None else None
+        held_block_text = (
+            f"# Held block: {held_block}" if held_block else "# Held block: none"
+        )
+
+        # Task 7 post-ship (Q) — held-block episodes skip the grasp gate.
+        # When a block is already held, the grasp precondition is implicitly
+        # satisfied (gripper closed below `grasp_min_width` on the target).
+        # The gate's normal check (`width in (grasp_min, grasp_max)`) would
+        # fail because gripper width is below min — preventing stage 0 from
+        # transitioning, which loop-back catches at dwell_steps. Skipping
+        # the gate lets stage 0 transition on proximity alone. Re-initialized
+        # every setup_episode (no state leak between episodes).
+        if held_block is not None:
+            self._task_uses_grasp_gate = False
+            logger.info(
+                f"Grasp gate skipped for held-block init (block={held_block})"
+            )
+
         # Task 7 Phase 3 iter 3 — VLM is the SOLE source of scene perception
         # for downstream LMPs. The deterministic `format_scene_state(scene_obs)`
         # injection was removed (user direction 2026-05-19): scene_obs is
@@ -264,21 +291,27 @@ class StageManager:
                 self._lmp_interface.set_scene_context(grounding)
                 scene_ctx_text = format_scene_context(grounding)
 
-        # Stash VLM grounding text on each affordance/avoidance LMP so they
+        # Combine held-block injection (robot-proprioception) + VLM grounding
+        # (scene perception) into a single scene_context block for the
+        # composer + downstream LMPs.
+        combined_scene_text = held_block_text
+        if scene_ctx_text:
+            combined_scene_text = f"{held_block_text}\n{scene_ctx_text}"
+
+        # Stash combined scene text on each affordance/avoidance LMP so they
         # prepend it to their own prompts (the composer receives it via the
-        # `scene_context` kwarg below). `None` when grounding wasn't run or
-        # produced an invalid dict — downstream LMPs then build prompts as
-        # pre-Task-7.
+        # `scene_context` kwarg below).
         for name in ("get_affordance_map", "get_avoidance_map"):
             if name in self._lmps:
-                self._lmps[name]._scene_text = scene_ctx_text or None
+                self._lmps[name]._scene_text = combined_scene_text or None
 
         logger.info(f"Running VoxPoser composer for: '{instruction}'")
+        logger.info(f"Held-block injection: {held_block_text}")
         try:
             result = compose_with_repair(
                 self._lmps["composer"],
                 instruction,
-                scene_context=scene_ctx_text or None,
+                scene_context=combined_scene_text or None,
             )
         except (VocabValidationError, ObjectResolutionError):
             # Hard fail — surface vocab-exhausted / object-unresolvable cases

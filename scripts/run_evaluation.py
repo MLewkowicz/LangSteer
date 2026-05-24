@@ -40,6 +40,7 @@ from utils.rollout import EpisodeRunner
 from visualization import VisualizationConfig, VisualizationManager
 from voxposer.calvin_interface import ObjectResolutionError
 from voxposer.lmp import VocabValidationError
+from voxposer.scene_image import capture_scene_image
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,20 @@ def parse_args():
         "--evaluation", nargs="+", required=True,
         help="Evaluation condition config(s) from conf/evaluation/ (e.g., baseline langsteer)",
     )
-    parser.add_argument("--num-episodes", type=int, default=25, help="Episodes per task")
+    parser.add_argument(
+        "--num-episodes", type=int, default=25,
+        help="Starting-condition pool size per task. For P4 this must match the "
+             "pool size used when labeling (p4_valid_indices.json's num_episodes), "
+             "because the saved valid indices map into that exact presample; the "
+             "filter then narrows to the few valid scenes per task.",
+    )
+    parser.add_argument(
+        "--tries-per-episode", type=int, default=1,
+        help="Re-roll each starting condition this many times with different "
+             "model seeds (same scene, different diffusion noise). Total rollouts "
+             "per task = (post-filter conditions) * tries_per_episode. For P4 with "
+             "5 valid scenes and tries=4, that's 20 rollouts/task.",
+    )
     parser.add_argument("--max-steps", type=int, default=360, help="Max env steps per episode")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for starting conditions")
     parser.add_argument(
@@ -217,32 +231,6 @@ def wire_steering(steering, policy, cfg):
         logger.info("Wired object-id callback: steering → policy.set_object")
 
 
-def _capture_scene_image(env, lmp_interface, sg_cfg) -> "bytes | None":
-    """Task 7 Phase 2 — capture an annotated overhead frame for the grounding LMP.
-
-    Returns JPEG bytes or None on any failure (caller falls back to text-only).
-    """
-    try:
-        from voxposer.scene_image import render_annotated_overhead
-        w = int(sg_cfg.get("image_width", 600))
-        h = int(sg_cfg.get("image_height", 600))
-        fov = float(sg_cfg.get("image_fov", 20.0))
-        rgb = env.render_high_res_static(w, h, fov=fov)
-        view_mat, proj_mat = env.get_static_camera_matrices(w, h, fov=fov)
-        if sg_cfg.get("annotate", True):
-            detections = lmp_interface.get_all_detections()
-            return render_annotated_overhead(rgb, detections, view_mat, proj_mat)
-        # Non-annotated mode: encode the raw frame as JPEG.
-        import io
-        from PIL import Image
-        buf = io.BytesIO()
-        Image.fromarray(rgb).save(buf, format="JPEG", quality=85)
-        return buf.getvalue()
-    except Exception as e:
-        logger.warning(f"Scene image capture failed ({e}); falling back to text-only.")
-        return None
-
-
 def setup_voxposer_episode(steering, env, hydra_cfg=None):
     """Setup VoxPoser steering for a new episode (after env.reset).
 
@@ -268,7 +256,7 @@ def setup_voxposer_episode(steering, env, hydra_cfg=None):
                 fixture_positions=state.get("fixture_positions"),
                 block_aabbs=state.get("block_aabbs"),
             )
-            scene_image = _capture_scene_image(env, lmp_iface, sg_cfg)
+            scene_image = capture_scene_image(env, lmp_iface, sg_cfg)
             if scene_image is not None:
                 logger.info(
                     f"Captured scene image ({len(scene_image)} bytes) for "
@@ -305,6 +293,7 @@ def run_condition(
     results_path: Path,
     perturbation_axis: str = None,
     p4_valid_indices: Dict[str, List[int]] = None,
+    tries_per_episode: int = 1,
 ):
     """Run evaluation for a single condition, saving after every episode."""
     condition_name = eval_cfg["condition_name"]
@@ -318,8 +307,21 @@ def run_condition(
             "seed": base_seed,
             "max_steps": max_steps,
             "perturbation_axis": perturbation_axis,
+            "tries_per_episode": tries_per_episode,
             "tasks": {},
         }
+    else:
+        # Resume must reuse the same tries_per_episode so the (condition_idx,
+        # attempt_idx) layout of the flat episode list stays consistent.
+        prev_tries = results.get("tries_per_episode", 1)
+        if prev_tries != tries_per_episode:
+            logger.error(
+                f"Existing results in {results_path} were produced with "
+                f"tries_per_episode={prev_tries}, but this run requested "
+                f"tries_per_episode={tries_per_episode}. Resume would shuffle "
+                f"the condition/attempt mapping. Start a new --output-dir."
+            )
+            sys.exit(1)
 
     logger.info(f"\n{'='*70}")
     logger.info(f"CONDITION: {condition_name}")
@@ -378,6 +380,7 @@ def run_condition(
             logger.info(f"  [P4] Filtered {task_name} to {len(valid)} valid starting conditions")
 
         n_available = min(num_episodes, len(conditions))
+        total_attempts = n_available * tries_per_episode
 
         # Initialize task entry if missing
         if task_name not in results["tasks"]:
@@ -388,8 +391,8 @@ def run_condition(
 
         completed = get_completed_episodes(results, task_name)
 
-        if completed >= num_episodes:
-            logger.info(f"\n  {task_name}: {completed}/{num_episodes} already done, skipping")
+        if completed >= total_attempts:
+            logger.info(f"\n  {task_name}: {completed}/{total_attempts} already done, skipping")
             continue
 
         if n_available == 0:
@@ -397,14 +400,30 @@ def run_condition(
             continue
 
         logger.info(f"\n  Task: {task_name} ({env.task_description})")
-        logger.info(f"    Resuming from episode {completed + 1}/{num_episodes}")
+        if tries_per_episode > 1:
+            logger.info(
+                f"    {n_available} conditions × {tries_per_episode} tries = "
+                f"{total_attempts} rollouts; resuming from rollout "
+                f"{completed + 1}/{total_attempts}"
+            )
+        else:
+            logger.info(f"    Resuming from episode {completed + 1}/{total_attempts}")
 
-        for ep_idx in range(completed, n_available):
-            robot_obs, scene_obs = conditions[ep_idx]
-            source_episode_id = int(ep_ids[ep_idx]) if ep_idx < len(ep_ids) else None
+        for flat_idx in range(completed, total_attempts):
+            # Flat list shape: (cond=0, att=0..T-1), (cond=1, att=0..T-1), ...
+            condition_idx = flat_idx // tries_per_episode
+            attempt_idx = flat_idx % tries_per_episode
 
-            # Reproducible diffusion noise
-            ep_seed = base_seed + deterministic_hash(task_name) + ep_idx
+            robot_obs, scene_obs = conditions[condition_idx]
+            source_episode_id = (
+                int(ep_ids[condition_idx]) if condition_idx < len(ep_ids) else None
+            )
+
+            # Reproducible diffusion noise. attempt 0 keeps the original
+            # (no-tries) seed so single-try runs are bit-identical to before.
+            ep_seed = base_seed + deterministic_hash(task_name) + condition_idx
+            if attempt_idx > 0:
+                ep_seed += attempt_idx * 1_000_000
             set_seed(ep_seed)
 
             obs = env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
@@ -454,7 +473,7 @@ def run_condition(
                 # Visualization lifecycle: notify renderers + install
                 # per-waypoint frame capture hook for video.
                 if viz_manager is not None:
-                    viz_manager.on_episode_start(ep_idx)
+                    viz_manager.on_episode_start(flat_idx)
                     if (viz_manager.config.video.enabled
                             and hasattr(env, "set_waypoint_render_fn")):
                         env.set_waypoint_render_fn(
@@ -471,14 +490,14 @@ def run_condition(
                         env.set_waypoint_render_fn(None)
             except VocabValidationError as e:
                 logger.error(
-                    f"    Episode {ep_idx + 1}/{num_episodes} hard-failed: "
+                    f"    Rollout {flat_idx + 1}/{total_attempts} hard-failed: "
                     f"VocabValidationError (composer exhausted re-prompts). {e}"
                 )
                 result = _HardFailResult()
                 hard_fail_reason = "vocab_validation_exhausted"
             except ObjectResolutionError as e:
                 logger.error(
-                    f"    Episode {ep_idx + 1}/{num_episodes} hard-failed: "
+                    f"    Rollout {flat_idx + 1}/{total_attempts} hard-failed: "
                     f"ObjectResolutionError (composer emitted unresolvable "
                     f"object name). {e}"
                 )
@@ -487,7 +506,9 @@ def run_condition(
 
             # Record episode data
             ep_record = {
-                "episode_idx": ep_idx,
+                "episode_idx": flat_idx,
+                "condition_idx": condition_idx,
+                "attempt_idx": attempt_idx,
                 "source_episode_id": source_episode_id,
                 "success": result.success,
                 "steps": result.episode_length,
@@ -500,14 +521,18 @@ def run_condition(
             # Save immediately (crash-safe)
             save_results(results_path, results)
 
+            attempt_tag = (
+                f" cond {condition_idx + 1}/{n_available} try {attempt_idx + 1}/{tries_per_episode}"
+                if tries_per_episode > 1 else ""
+            )
             if result.success:
                 logger.info(
-                    f"    ✓ Episode {ep_idx+1}/{num_episodes} SUCCEEDED "
+                    f"    ✓ Rollout {flat_idx+1}/{total_attempts}{attempt_tag} SUCCEEDED "
                     f"(steps={result.episode_length}, reward={result.episode_reward:.2f})"
                 )
             else:
                 logger.info(
-                    f"    ✗ Episode {ep_idx+1}/{num_episodes} FAILED "
+                    f"    ✗ Rollout {flat_idx+1}/{total_attempts}{attempt_tag} FAILED "
                     f"(steps={result.episode_length}, reward={result.episode_reward:.2f})"
                 )
 
@@ -662,7 +687,17 @@ def main():
 
     # All tasks (union across configs, preserving order from first)
     all_tasks = eval_configs[0][1]["tasks"]
-    logger.info(f"Evaluating {len(all_tasks)} tasks, {args.num_episodes} episodes each")
+    if args.tries_per_episode > 1:
+        suffix = (
+            " (P4 filter will further narrow the per-task condition count)"
+            if args.perturbation_axis == "P4" else ""
+        )
+        logger.info(
+            f"Evaluating {len(all_tasks)} tasks, pool={args.num_episodes} "
+            f"× {args.tries_per_episode} tries/condition{suffix}"
+        )
+    else:
+        logger.info(f"Evaluating {len(all_tasks)} tasks, {args.num_episodes} episodes each")
 
     # Dataset path from base Hydra config
     abs_conf_dir = str(conf_dir.resolve())
@@ -759,6 +794,7 @@ def main():
             results_path=results_path,
             perturbation_axis=args.perturbation_axis,
             p4_valid_indices=p4_valid_indices,
+            tries_per_episode=args.tries_per_episode,
         )
 
     logger.info(f"\nResults saved to: {output_dir}")

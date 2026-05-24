@@ -24,6 +24,14 @@ from plan_utils import get_empty_affordance_map, set_voxel_by_radius, set_voxel_
 #
 # Coordinate conventions: x=left(-)→right(+), y=front(-)→back(+),
 # z=bottom→top. All cm offsets convert via `cm2index(cm)`.
+#
+# Use the FULL object name from the composer's query. When the query says
+# "a point at the center of the slider interior", look up
+# `parse_query_obj('slider interior')` — NOT `'slider'`. When the query
+# says "drawer interior", look up `'drawer interior'` — NOT `'drawer'`.
+# Dropping the second word resolves the wrong fixture: `slider`/`drawer`
+# refer to door/body panels; `slider_interior`/`drawer_interior` refer to
+# the cavity destinations. The difference matters; do not abbreviate.
 # ============================================================================
 
 # Query: a point at the center of the red block.

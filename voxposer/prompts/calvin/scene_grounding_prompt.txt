@@ -17,7 +17,7 @@
 #   2) Disambiguate any vague noun phrase in the instruction using the
 #      visible scene.
 #
-# Output a single Python assignment: `ret_val = {...}` with TWO keys:
+# Output a single Python assignment: `ret_val = {...}` with the keys below:
 #
 #   blocks_visible: dict mapping each block-color → location bucket.
 #       Buckets:
@@ -28,6 +28,9 @@
 #         'absent'          — block not visible in the frame.
 #       Always emit all three known colors ('red_block', 'blue_block',
 #       'pink_block'). Use 'absent' for any color you can't locate.
+#       (Note: the held-block determination is provided to downstream
+#       LMPs via a separate deterministic injection — your visual call
+#       on 'held' is best-effort and not load-bearing.)
 #
 #   ambiguous_resolutions: dict mapping any vague noun phrase in the
 #       instruction → the canonical OBJECT_VOCAB token it refers to in
@@ -45,6 +48,22 @@
 #       'led' (the small button-toggled light), based on which is the
 #       more salient subject of the instruction.
 #
+#   slider_accessible_chamber: 'left' | 'right' | None.
+#
+#       The accessible chamber is the one NOT BLOCKED BY THE DOOR PANEL
+#       — i.e., the open / empty / visible-inside side where an object
+#       could be placed.
+#
+#       Inversion rule (read carefully):
+#         - Door panel visually on the LEFT side  →  emit 'right'
+#                                                    (right chamber open)
+#         - Door panel visually on the RIGHT side →  emit 'left'
+#                                                    (left chamber open)
+#
+#       Do NOT emit the door's position. Emit the OPEN chamber's
+#       position. If door is centered or position is ambiguous: emit
+#       None.
+#
 # Output ONLY the `ret_val = {...}` assignment. No commentary, no extra
 # code, no markdown. Stop at "# Query:".
 
@@ -56,6 +75,7 @@ ret_val = {
         'pink_block': 'table',
     },
     'ambiguous_resolutions': {},
+    'slider_accessible_chamber': 'right',  # door covers left half, right half open
 }
 
 # Query: instruction = 'Pick up the block from the drawer.', annotated scene.
@@ -69,6 +89,7 @@ ret_val = {
         'the block': 'blue_block',
         'the block from the drawer': 'blue_block',
     },
+    'slider_accessible_chamber': None,  # not relevant to drawer instruction
 }
 
 # Query: instruction = 'Turn on the light.', annotated scene.
@@ -81,6 +102,7 @@ ret_val = {
     'ambiguous_resolutions': {
         'the light': 'lightbulb',
     },
+    'slider_accessible_chamber': None,
 }
 
 # Query:

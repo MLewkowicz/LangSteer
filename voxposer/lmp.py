@@ -748,6 +748,14 @@ def validate_grounding(g: Any) -> list:
     ar = g.get("ambiguous_resolutions")
     if not isinstance(ar, dict):
         issues.append("missing or non-dict 'ambiguous_resolutions'")
+    # `slider_accessible_chamber` is optional. Accept 'left' | 'right' | None or
+    # missing. Reject other values to surface VLM hallucinations early.
+    if "slider_accessible_chamber" in g:
+        v = g["slider_accessible_chamber"]
+        if v not in (None, "left", "right"):
+            issues.append(
+                f"slider_accessible_chamber: {v!r} not in ('left', 'right', None)"
+            )
     return issues
 
 

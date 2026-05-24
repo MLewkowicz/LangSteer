@@ -189,3 +189,29 @@ def render_annotated_overhead(
     buf = io.BytesIO()
     pil.save(buf, format="JPEG", quality=jpeg_quality)
     return buf.getvalue()
+
+
+def capture_scene_image(env, lmp_interface, sg_cfg) -> Optional[bytes]:
+    """Capture an annotated overhead frame for the scene-grounding LMP.
+
+    Thin orchestration over `render_annotated_overhead`: pulls the high-res
+    static-camera frame + view/proj matrices from `env`, pulls detections
+    from `lmp_interface`, and falls back to a raw-JPEG encoding when
+    `sg_cfg["annotate"]` is false. Returns JPEG bytes or None on any
+    failure (caller falls back to text-only).
+    """
+    try:
+        w = int(sg_cfg.get("image_width", 600))
+        h = int(sg_cfg.get("image_height", 600))
+        fov = float(sg_cfg.get("image_fov", 20.0))
+        rgb = env.render_high_res_static(w, h, fov=fov)
+        view_mat, proj_mat = env.get_static_camera_matrices(w, h, fov=fov)
+        if sg_cfg.get("annotate", True):
+            detections = lmp_interface.get_all_detections()
+            return render_annotated_overhead(rgb, detections, view_mat, proj_mat)
+        buf = io.BytesIO()
+        Image.fromarray(rgb).save(buf, format="JPEG", quality=85)
+        return buf.getvalue()
+    except Exception as e:
+        logger.warning(f"Scene image capture failed ({e}); falling back to text-only.")
+        return None

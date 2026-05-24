@@ -78,25 +78,42 @@ TABLE_ALIAS = [
 # doesn't carry rotation).
 # Link mapping (playtable UID=5): 0=button, 1=switch, 2=slide, 3=drawer, 4=led, 5=light
 CALVIN_FIXTURES = {
-    "slider": {
-        # slide_link (Link 2) — full slider door (tilted -30.5° around X)
-        "position": np.array([0.040, 0.065, 0.538]),
-        "size": np.array([0.280, 0.018, 0.218]),
-    },
+    # NOTE (2026-05-19, user directive): bare `slider` (door panel) and `drawer`
+    # (body) entries removed from this voxposer-side dict. They caused value
+    # maps to collapse on the door / drawer face instead of the intended
+    # target (handle for articulation, *_interior for placement). The
+    # composer / affordance LMP code uses only `*_handle` (contact) and
+    # `*_interior` (cavity destination) — bare names are never the target
+    # of a value map. Env-side `_FIXTURE_AABB_OVERRIDES` and
+    # `_DERIVED_OFFSETS` still keep `slider` and `drawer` as parent
+    # references for their derived children — only the name-resolution
+    # dict here drops them.
     "slider_handle": {
         # Small grasp groove on the slider door's front face (parent-local offset [0, -0.038, 0.002])
         "position": np.array([0.040, 0.027, 0.540]),
         "size": np.array([0.034, 0.066, 0.161]),
     },
-    "drawer": {
-        # drawer_link (Link 3)
-        "position": np.array([0.178, -0.008, 0.354]),
-        "size": np.array([0.445, 0.345, 0.102]),
-    },
     "drawer_handle": {
         # Horizontal pull bar flush with the drawer's front face
         "position": np.array([0.180, -0.220, 0.360]),
         "size": np.array([0.242, 0.077, 0.036]),
+    },
+    "drawer_interior": {
+        # Cavity inside the drawer body. Static placeholder; live tracked
+        # values come from `envs/calvin.py::_DERIVED_OFFSETS['drawer_interior']`
+        # via `_fixture_positions` (parent='drawer' so it follows the drawer
+        # joint). `_detect_fixture` prefers live values over this stub.
+        "position": np.array([0.178, -0.008, 0.354]),
+        "size": np.array([0.40, 0.30, 0.08]),
+    },
+    "slider_interior": {
+        # Cavity inside the slider cabinet body. Static placeholder; live
+        # tracked values come from `envs/calvin.py::_FIXTURE_AABB_OVERRIDES['slider_interior']`
+        # via `_fixture_positions`. World-frame static (cabinet doesn't move);
+        # spans BOTH halves — `_detect_fixture` slices to the accessible half
+        # using `_scene_context['slider_accessible_chamber']` when available.
+        "position": np.array([-0.0930, 0.0980, 0.4530]),
+        "size": np.array([0.5450, 0.1460, 0.0250]),
     },
     "lightbulb": {
         # light_link (Link 5)
@@ -727,10 +744,13 @@ class CalvinLMPInterface:
                 )
                 return self._detect_block(obj_name, BLOCK_SCENE_OBS[held])
 
-        # Check fixtures, longest names first so
-        # 'slider_left' matches before 'slider', 'drawer_handle' before 'drawer'
+        # Check fixtures, longest names first so 'drawer_interior' matches
+        # before 'drawer', 'drawer_handle' before 'drawer', etc. The query
+        # phrasing may use a space ('drawer handle') or underscore — match
+        # against both forms by also testing `name_lower` with spaces→underscores.
+        name_lower_us = name_lower.replace(" ", "_")
         for fixture_name in sorted(CALVIN_FIXTURES, key=len, reverse=True):
-            if fixture_name in name_lower:
+            if fixture_name in name_lower or fixture_name in name_lower_us:
                 return self._detect_fixture(
                     obj_name, fixture_name, CALVIN_FIXTURES[fixture_name]
                 )
@@ -843,6 +863,24 @@ class CalvinLMPInterface:
             pos_world = fixture_info["position"].copy()
             size = fixture_info["size"].astype(np.float32)
             rotation = np.eye(3, dtype=np.float32)
+
+        # Slider-interior half-slicing per VLM grounding. The full slider
+        # cabinet spans both halves; only one half is open at a time. The
+        # VLM emits `slider_accessible_chamber: 'left' | 'right' | None` to
+        # tell us which half to target. Fallback to full BB when the field
+        # is missing (None or no scene context). VLM-only per architecture
+        # decision — no scene_obs fallback.
+        if fixture_name == "slider_interior" and self._scene_context is not None:
+            chamber = self._scene_context.get("slider_accessible_chamber")
+            if chamber in ("left", "right"):
+                half_sx = size[0] / 2.0
+                # World-axis x: 'left' half = [center_x - sx/2, center_x],
+                #               'right' half = [center_x, center_x + sx/2].
+                sign = -1.0 if chamber == "left" else 1.0
+                pos_world = pos_world.copy()
+                pos_world[0] += sign * (half_sx / 2.0)
+                size = size.copy()
+                size[0] = half_sx
 
         corners_world = obb_world_corners(pos_world, size, rotation)
         aabb_min_world = corners_world.min(axis=0)

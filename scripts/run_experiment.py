@@ -191,7 +191,7 @@ def main(cfg: DictConfig) -> None:
     sampled_conditions = None
     sampled_episode_ids = None
     if cfg.get('sample_from_dataset', False):
-        from scripts.run_evaluation import presample_starting_conditions
+        from run_evaluation import presample_starting_conditions
         sampled_map, ids_map = presample_starting_conditions(
             dataset_path=Path(cfg.env.dataset_path),
             split=cfg.env.split,
@@ -253,14 +253,14 @@ def main(cfg: DictConfig) -> None:
                 scene_image = None
                 sg_cfg = cfg.steering.get('scene_grounding', {}) or {}
                 if sg_cfg.get('enabled', False):
-                    from scripts.run_evaluation import _capture_scene_image
+                    from voxposer.scene_image import capture_scene_image
                     lmp_iface = steering.lmp_interface
                     lmp_iface.update_state(
                         state['robot_obs'], state['scene_obs'],
                         fixture_positions=state.get('fixture_positions'),
                         block_aabbs=state.get('block_aabbs'),
                     )
-                    scene_image = _capture_scene_image(env, lmp_iface, sg_cfg)
+                    scene_image = capture_scene_image(env, lmp_iface, sg_cfg)
                     if scene_image is not None:
                         logger.info(
                             f"Captured scene image ({len(scene_image)} bytes) "

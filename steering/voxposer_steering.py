@@ -159,6 +159,9 @@ class VoxPoserSteering(BaseSteering):
             rot_horizon_alpha_max=cfg.get("rot_horizon_alpha_max", 0.3),
             timestep_scaler=timestep_scaler,
             alignment_scaler=rot_alignment_scaler,
+            hemisphere_fix=cfg.get("rot_hemisphere_fix", True),
+            guidance_method=cfg.get("rot_guidance_method", "slerp"),
+            inject_below_timestep=cfg.get("rot_inject_below_timestep", 20),
         )
 
         # Episode-level step counter (drives log throttling).

@@ -54,12 +54,12 @@ step_floor: 0.05
 # the steering module nudges the predicted wrist rotation toward the target
 # via Tweedie's formula in 6D rotation space. All knobs below are no-ops on
 # stages without a rotation target, so existing rollouts behave identically.
-guidance_strength_rot: 0   # default to position strength
+guidance_strength_rot: .4   # default to position strength
 start_guidance_timestep_rot: ${.start_guidance_timestep}
 # Alignment-decay: shrink rotation guidance as the predicted rotation aligns
 # with the target (measured by Frobenius distance ||R_pred − R_target||_F,
 # bounded ≤ 2*sqrt(2) ≈ 2.83). 0.5 ≈ 30°, 0.1 ≈ 6°.
-use_rot_alignment_scaling: false
+use_rot_alignment_scaling: true
 rot_align_full: 0.5
 rot_align_near: 0.1
 rot_align_floor: 0.05
@@ -80,7 +80,32 @@ rot_align_floor: 0.05
 # The floor keeps a small pull on h=0 so the trajectory starts rotating
 # immediately rather than holding pose for one waypoint.
 rot_horizon_floor: 0.0
-rot_horizon_alpha_max: 0.3
+rot_horizon_alpha_max: 0.6
+# Quaternion-hemisphere fix in the per-horizon SLERP. When true (default,
+# legacy behavior), q_target is flipped to share q_pred's hemisphere so SLERP
+# takes the short way in quaternion space. When false, the sign is left
+# unchanged — useful when the policy has a directional bias that the short-
+# way SLERP is locking in (the steering can't pull across the antipodal
+# boundary because the SLERP target keeps following the prediction).
+# (Only consulted when rot_guidance_method == "slerp".)
+rot_hemisphere_fix: true
+
+# Rotation-guidance method. Three options, swappable for A/B debugging:
+#   slerp   — per-horizon quaternion SLERP toward R_target (legacy default).
+#             Subject to the quaternion hemisphere ambiguity above.
+#   tangent — log/exp map on SO(3). Equivalent to SLERP on the manifold but
+#             the gradient direction is unambiguous: R_target alone determines
+#             which way the prediction is pulled (no q_pred hemisphere
+#             dependency). Use when "always commits to the wrong direction"
+#             behavior is observed under slerp.
+#   inject  — at t ≤ rot_inject_below_timestep, return an analytical ε-delta
+#             that drives Tweedie's x₀_rot all the way to the per-horizon
+#             target instead of nudging it. Heavy-handed; bypasses gradient
+#             classifier-guidance entirely. Above the threshold, falls back
+#             to the tangent path.
+rot_guidance_method: slerp
+# Only used by rot_guidance_method == "inject".
+rot_inject_below_timestep: 20
 
 # DiffuserActor position normalization bounds (gripper_loc_bounds).
 # These are in gripper-relative space (same as policy.gripper_loc_bounds).
