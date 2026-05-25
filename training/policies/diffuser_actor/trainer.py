@@ -764,10 +764,13 @@ class DiffuserActorTrainingWorkspace:
         if not self.is_main_process:
             return
 
+        # Always save the *unwrapped* model so checkpoints are world-size
+        # portable: a single-GPU run can resume a DDP checkpoint and vice
+        # versa.  The DDP wrapper's `.module` attribute holds the inner
+        # model when distributed; otherwise model_ref is already bare.
         model_ref = self.model.module if self.is_distributed else self.model
         checkpoint = {
-            "weight": model_ref.state_dict() if not self.is_distributed
-                      else self.model.state_dict(),
+            "weight": model_ref.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "scheduler": self.scheduler.state_dict(),
             "iter": step_id + 1,
@@ -799,7 +802,13 @@ class DiffuserActorTrainingWorkspace:
         torch.save(checkpoint, checkpoint_dir / f"{step_id:07d}.pth")
 
     def _load_checkpoint(self, checkpoint_path):
-        """Load checkpoint for resuming training."""
+        """Load checkpoint for resuming training.
+
+        World-size portable: handles checkpoints saved either with or without
+        the DDP `.module.` state-dict prefix, so a single-GPU checkpoint can
+        resume a multi-GPU run and vice versa.  Also restores EMA weights
+        when present.
+        """
         if not os.path.isfile(checkpoint_path):
             logger.warning(f"Checkpoint not found: {checkpoint_path}")
             return
@@ -807,7 +816,14 @@ class DiffuserActorTrainingWorkspace:
         logger.info(f"Loading checkpoint: {checkpoint_path}")
         ckpt = torch.load(checkpoint_path, map_location="cpu")
 
-        self.model.load_state_dict(ckpt["weight"])
+        # Load weights into the unwrapped model — strip a legacy `.module.`
+        # prefix if the checkpoint was saved by an older DDP-only path.
+        target = self.model.module if self.is_distributed else self.model
+        weights = ckpt["weight"]
+        if any(k.startswith("module.") for k in weights):
+            weights = {k[len("module."):]: v for k, v in weights.items()}
+        target.load_state_dict(weights)
+
         if "optimizer" in ckpt:
             self.optimizer.load_state_dict(ckpt["optimizer"])
             # Keep the resumed LR as-is (scheduler will restore the correct
@@ -815,6 +831,14 @@ class DiffuserActorTrainingWorkspace:
             # against stale checkpoints from a different lr config.
             for pg in self.optimizer.param_groups:
                 pg["lr"] = self.cfg.lr
+
+        if self.ema_model is not None and "ema_weight" in ckpt:
+            ema_state = ckpt["ema_weight"]
+            if any(k.startswith("module.") for k in ema_state):
+                ema_state = {k[len("module."):]: v for k, v in ema_state.items()}
+            self.ema_model.averaged_model.load_state_dict(ema_state)
+            logger.info("Restored EMA weights from checkpoint.")
+
         self.global_step = ckpt.get("iter", 0)
         self.best_loss = ckpt.get("best_loss", None)
 
