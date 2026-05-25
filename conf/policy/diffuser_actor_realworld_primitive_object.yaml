@@ -36,7 +36,10 @@ lang_enhanced: true
 # Inference
 pred_horizon: 20
 
-cameras: ["static", "gripper"]
+# Camera key order MUST match what the dataset stored. The realworld
+# converter writes camera_dicts with keys ["front", "wrist"]; deploy code
+# packs Observation.rgb/depth with those same keys.
+cameras: ["front", "wrist"]
 crop_images: true
 
 mask_language: false

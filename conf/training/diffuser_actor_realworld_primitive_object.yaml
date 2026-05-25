@@ -19,15 +19,18 @@ defaults:
   - diffuser_actor_primitive_object
 
 policy:
-  # Workspace bounds calibrated from gripper + action positions across all 162
-  # .dat files (robot base frame), with 0.10 m margin per side. The earlier
-  # 0.30 m margin left the gripper/action distribution inside only ~50% of the
-  # normalised [-1, 1] cube, which weakens the diffusion noise schedule's
-  # effective signal. Raw data spans X[0.36, 0.81], Y[-0.31, 0.41], Z[0.04, 0.75].
-  # Use: uv run python scripts/compute_gripper_loc_bounds.py \
-  #        --dat_dir /home/clear/Documents/michal/realworld_3da --margin 0.10
-  gripper_loc_bounds: [[0.259, -0.410, -0.057], [0.909, 0.515, 0.851]]
-  relative: false
+  # Relative-frame bounds: the model sees displacements after
+  # `to_relative_action` (traj − traj[0]) and `convert2rel` (pcd / gripper
+  # history − curr_gripper). Computed from all 162 .dat files via
+  #   uv run python scripts/compute_relative_gripper_loc_bounds.py \
+  #     --dat_dir /home/clear/Documents/michal/realworld_3da --margin 0.10
+  # Raw delta extrema (union of trajectory, gripper-history, action-target):
+  #   min: [-0.1280, -0.0737, -0.1775]   max: [0.1190, 0.0750, 0.1654]
+  # With 0.10 m margin per side. Dominant axis is Z (vertical reach in
+  # grasp/place). CALVIN's bounds (~2× wider) under-utilised the [-1, 1] cube
+  # for this dataset; tighter delta bounds restore diffusion signal strength.
+  gripper_loc_bounds: [[-0.2280, -0.1737, -0.2775], [0.2190, 0.1750, 0.2654]]
+  relative: true
 
   # Fresh-from-scratch run on real-world wine-glass pick-and-place: the only
   # primitives present are grasp/place and the only object is the wine glass,
@@ -59,7 +62,7 @@ dataset:
   image_rescale: "0.75,1.25"   # standard augmentation range; ~95 episodes is large enough
   dense_interpolation: true
   interpolation_length: 20
-  relative_action: false
+  relative_action: true
 
 # 138 training segments × 5-frame chunks ≈ 43 iters/epoch at batch_size=16, so
 # 40k iters ≈ 930 epochs. The previous 100k run had saturated val rot/pos
@@ -69,7 +72,7 @@ train_iters: 40000
 batch_size: 16
 batch_size_val: 4
 num_workers: 4
-lr: 3.0e-4              # back to standard CALVIN lr; larger dataset reduces overfit risk
+lr: 1.0e-4              # matches v1; 3e-4 was too hot on ~95-episode real-world set
 wd: 1.0e-3
 accumulate_grad_batches: 1
 lr_warmup_steps: 500
