@@ -29,20 +29,32 @@ use_object_id: true
 num_objects: 2              # ISAAC_OBJECT_VOCAB (alphabetical): bowl=0, mug=1
 fps_subsampling_factor: 3
 
-# gripper_loc_bounds — the model uses this to normalize THREE tensors to
-# [-1, 1] against the same box (see diffuser_actor_model.py:447-451):
-#   1) gt_trajectory[:, :, :3]   — action targets
-#   2) pcd_obs[..., :3]          — per-pixel point cloud (world XYZ)
-#   3) curr_gripper[..., :3]     — current gripper position
-# So the box must cover the UNION of (a) every ee_pose the robot reaches AND
-# (b) every PCD point the cameras see — not just the EE trajectory.
+# gripper_loc_bounds — *relative-frame* bounds (delta from current ee_pose).
+# The model uses this to normalize three tensors against the same box:
+#   1) gt_trajectory[:, :, :3]   — relativized by dataset_isaac.py
+#                                  when dataset.relative_action=True
+#   2) pcd_obs[..., :3]          — relativized in-model by convert2rel
+#                                  when policy.relative=true
+#   3) curr_gripper[..., :3]     — same; always zero after convert2rel
 #
-# Calibrated 2026-05-25 from all 83 demos in data/isaac_sim_demos:
-#   ee_pose       : x ∈ [-1.06, -0.23]  y ∈ [+1.86, +2.40]  z ∈ [+0.82, +1.35]
-#   PCD (1/99 pc) : x ∈ [-2.41, +0.80]  y ∈ [+0.47, +3.00]  z ∈ [+0.90, +4.62]
-# Bounds below = union + 5 cm buffer.  Recompute whenever the USD camera
-# placement, robot mount pose, or scene geometry changes.
-gripper_loc_bounds: [[-2.4558, 0.4230, 0.7655], [0.8454, 3.0449, 4.6649]]
+# Sizing rule: cover the trajectory + gripper-history delta range with a
+# small margin. PCD background points outside this box clamp to ±1, which is
+# the intended behaviour (see DiffuserActor.normalize_pos:333-334) — those
+# clamp-saturated PCD values are still useful as "this pixel is far in
+# direction X" cues.
+#
+# Earlier absolute-Isaac-world bounds were incompatible with relative=true:
+# either pcd_obs clamped after convert2rel (when bounds = ee-only) or the
+# normalised trajectory signal collapsed to a few percent of [-1, 1] (when
+# bounds were widened to include PCD), drowning the diffusion noise schedule.
+#
+# Calibrated 2026-05-25 from all 83 demos / 40266 frames in
+# data/isaac_sim_demos via:
+#   uv run python scripts/compute_relative_gripper_loc_bounds_isaac.py \
+#     --data_dir data/isaac_sim_demos --margin 0.10
+# Raw delta extrema (union of trajectory, gripper-history, action-target):
+#   min: [-0.1518, -0.1240, -0.1112]   max: [0.1473, 0.1599, 0.1598]
+gripper_loc_bounds: [[-0.2518, -0.2240, -0.2112], [0.2473, 0.2599, 0.2598]]
 
 rotation_parametrization: "6D"
 quaternion_format: "wxyz"

@@ -94,7 +94,16 @@ class IsaacDataset(Dataset):
         return_low_lvl_trajectory: bool = True,
         training: bool = True,
         max_episodes: int = -1,
+        relative_action: bool = True,
     ) -> None:
+        # When `relative_action=True`, the per-chunk current ee_pose is
+        # subtracted from action / trajectory position+euler before quaternion
+        # conversion — matching CalvinDataset's `to_relative_action`. This is
+        # required to keep the frame consistent with the model's `convert2rel`
+        # (which shifts pcd_obs and curr_gripper by curr_gripper); without it,
+        # gt_trajectory stays absolute while pcd/gripper are gripper-relative,
+        # and `normalize_pos` clamps either the trajectory or the PCD depending
+        # on how `gripper_loc_bounds` is sized. Gripper width is never shifted.
         self._nhist = nhist
         self._chunk_size = chunk_size
         self._execute_every = execute_every
@@ -102,6 +111,7 @@ class IsaacDataset(Dataset):
         self._gripper_close_threshold = gripper_close_threshold
         self._return_low_lvl_trajectory = return_low_lvl_trajectory
         self._training = training
+        self._relative_action = relative_action
 
         data_path = Path(data_dir)
         episode_files = sorted(data_path.glob("episode_*.h5"))
@@ -202,13 +212,18 @@ class IsaacDataset(Dataset):
 
         # ------------------------------------------------------------------
         # Action: ee_pose at t + execute_every — a continuous-mode keypose
-        # proxy.  Used by the model both as a goal-position hint and as the
-        # absolute target for relative-trajectory diffusion.
+        # proxy. Subtract curr ee_pose (gripper_euler) per chunk frame so the
+        # action target lives in the same gripper-relative frame as pcd/
+        # curr_gripper after the model's convert2rel; gripper width is left
+        # absolute. Matches CalvinDataset's `to_relative_action`.
         # ------------------------------------------------------------------
         action_euler = np.stack(
             [ee_pose[min(t + self._execute_every, T - 1)] for t in frame_ids],
             axis=0,
         )                                                                        # (N,7)
+        if self._relative_action:
+            action_euler[..., :3] -= gripper_euler[..., :3]
+            action_euler[..., 3:6] -= gripper_euler[..., 3:6]
         action = torch.as_tensor(_euler_to_quat_concat(action_euler), dtype=torch.float32)
 
         # ------------------------------------------------------------------
@@ -281,6 +296,14 @@ class IsaacDataset(Dataset):
                 for k in range(self._traj_len):
                     src = min(t + 1 + k, T - 1)
                     traj_euler[i, k] = ee_pose[src]
+
+            if self._relative_action:
+                # Shift each waypoint by the current ee_pose (gripper_euler)
+                # so the trajectory frame matches the pcd/curr_gripper frame
+                # after the model's convert2rel. Position + euler only;
+                # gripper width is preserved.
+                traj_euler[..., :3] -= gripper_euler[:, None, :3]
+                traj_euler[..., 3:6] -= gripper_euler[:, None, 3:6]
 
             traj = torch.as_tensor(_euler_to_quat_concat(traj_euler), dtype=torch.float32)
 

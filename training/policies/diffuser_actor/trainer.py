@@ -359,6 +359,10 @@ class DiffuserActorTrainingWorkspace:
                 dataset_cfg.get("gripper_close_threshold", 0.04)
             ),
             return_low_lvl_trajectory=True,
+            # Default True to match CalvinDataset and the model's relative=True
+            # convention; flip to False only if pairing with a relative=False
+            # policy (and absolute workspace bounds) for fully-absolute training.
+            relative_action=bool(dataset_cfg.get("relative_action", True)),
         )
 
         train_dataset = IsaacDataset(

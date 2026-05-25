@@ -35,6 +35,12 @@ dataset:
   gripper_close_threshold: 0.04 # gripper_width < this → primitive switches to `place`
   max_episodes_train: -1
   max_episodes_val: -1
+  # Subtract current ee_pose from each action/trajectory waypoint so the action
+  # target lives in the same gripper-relative frame as pcd/curr_gripper after
+  # the model's `convert2rel`. Must stay True whenever `policy.relative=true`
+  # (the default for diffuser_actor_isaac.yaml); flip both to False together if
+  # you want fully-absolute training with workspace-sized bounds.
+  relative_action: true
 
   # CalvinDataset-only knobs — left for the inherited config but unused by
   # IsaacDataset.  Listed explicitly so future readers know they're inert.
