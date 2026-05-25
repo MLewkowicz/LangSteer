@@ -1,0 +1,45 @@
+# 3D Diffuser Actor Policy — Primitive + Object Conditioning, real-world Franka
+# Mirrors diffuser_actor_primitive_object but with bounds and vocab sized for
+# the wine-glass bimanual dataset (grasp/place × glass).
+
+name: diffuser_actor
+
+ckpt_path: "outputs/checkpoints/diffuser_actor_realworld_primitive_object_v2/best.pth"
+device: "cuda"
+
+# Architecture (must match training config exactly)
+backbone: clip
+image_size: [256, 256]
+embedding_dim: 192
+num_vis_ins_attn_layers: 2
+use_instruction: true
+use_primitive_id: true
+num_primitives: 2           # grasp=0, place=1
+use_object_id: true
+num_objects: 1              # glass=0
+fps_subsampling_factor: 3
+
+# Bounds calibrated from gripper+action positions across all 81 episodes
+# (162 .dat files) + 0.10 m margin. MUST match the training config — the model
+# uses these for both normalize_pos (gripper/action/PCD) and unnormalize_pos
+# at inference. Re-run scripts/compute_gripper_loc_bounds.py if new episodes
+# are added.
+gripper_loc_bounds: [[0.259, -0.410, -0.057], [0.909, 0.515, 0.851]]
+
+rotation_parametrization: "6D"
+quaternion_format: "wxyz"
+diffusion_timesteps: 25
+nhist: 3
+relative: false
+lang_enhanced: true
+
+# Inference
+pred_horizon: 20
+
+cameras: ["static", "gripper"]
+crop_images: true
+
+mask_language: false
+
+corrector_steps: 0
+corrector_step_size: 0.001

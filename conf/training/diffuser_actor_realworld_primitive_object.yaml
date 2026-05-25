@@ -1,6 +1,6 @@
 # 3D Diffuser Actor Training — Primitive + Object Conditioning, real-world Franka
 # Inherits from the CALVIN primitive_object recipe; overrides only paths + small
-# tuning knobs that differ for the 28-episode wrist-ZED + overhead teleop set
+# tuning knobs that differ for the ~95-episode wrist-ZED + overhead teleop set
 # in /home/clear/Documents/michal/realworld_3da.
 #
 # Prerequisites:
@@ -19,10 +19,15 @@ defaults:
   - diffuser_actor_primitive_object
 
 policy:
-  # Real ee deltas across the captured 28 episodes are well within the CALVIN
-  # bounds (~0.25m), so reuse them. Tighten later by computing actual relative
-  # trajectory bounds if normalisation is too loose.
-  gripper_loc_bounds: [[-0.3021, -0.2569, -0.2156], [0.3613, 0.3377, 0.1837]]
+  # Workspace bounds calibrated from gripper + action positions across all 162
+  # .dat files (robot base frame), with 0.10 m margin per side. The earlier
+  # 0.30 m margin left the gripper/action distribution inside only ~50% of the
+  # normalised [-1, 1] cube, which weakens the diffusion noise schedule's
+  # effective signal. Raw data spans X[0.36, 0.81], Y[-0.31, 0.41], Z[0.04, 0.75].
+  # Use: uv run python scripts/compute_gripper_loc_bounds.py \
+  #        --dat_dir /home/clear/Documents/michal/realworld_3da --margin 0.10
+  gripper_loc_bounds: [[0.259, -0.410, -0.057], [0.909, 0.515, 0.851]]
+  relative: false
 
   # Fresh-from-scratch run on real-world wine-glass pick-and-place: the only
   # primitives present are grasp/place and the only object is the wine glass,
@@ -49,32 +54,35 @@ dataset:
   # chunk slicing in CalvinDataset.__getitem__ stable on short episodes.
   max_episode_length: 5
   max_episodes_per_task: -1
-  cache_size: 32
-  cache_size_val: 8
-  image_rescale: "0.85,1.15"   # tighter augmentation; we have ~28 episodes total
+  cache_size: 64
+  cache_size_val: 16
+  image_rescale: "0.75,1.25"   # standard augmentation range; ~95 episodes is large enough
   dense_interpolation: true
   interpolation_length: 20
-  relative_action: true
+  relative_action: false
 
-# 28 episodes is tiny; cap iters at 30k (~3-4h on a single GPU) and validate often.
-train_iters: 30000
-batch_size: 8
-batch_size_val: 2
-num_workers: 2
-lr: 1.0e-4              # lower than CALVIN's 3e-4 — small dataset, easy to overfit
-wd: 5.0e-3
+# 138 training segments × 5-frame chunks ≈ 43 iters/epoch at batch_size=16, so
+# 40k iters ≈ 930 epochs. The previous 100k run had saturated val rot/pos
+# metrics well before 30k; the extra steps were burning cosine-decayed lr on
+# noise. 40k ≈ 4-5h on a single RTX 5090.
+train_iters: 40000
+batch_size: 16
+batch_size_val: 4
+num_workers: 4
+lr: 3.0e-4              # back to standard CALVIN lr; larger dataset reduces overfit risk
+wd: 1.0e-3
 accumulate_grad_batches: 1
 lr_warmup_steps: 500
 grad_clip: 1.0
 
-val_freq: 250
+val_freq: 500
 log_freq: 10
 
 use_ema: true
 ema_power: 0.75
 ema_max_value: 0.9999
 
-checkpoint_dir: "outputs/checkpoints/diffuser_actor_realworld_primitive_object"
+checkpoint_dir: "outputs/checkpoints/diffuser_actor_realworld_primitive_object_v2"
 experiment_name: "diffuser_actor_realworld_primitive_object_${now:%Y%m%d_%H%M%S}"
 use_wandb: true
 wandb_project: "langsteer_diffuser_actor"

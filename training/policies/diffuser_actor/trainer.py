@@ -622,8 +622,11 @@ class DiffuserActorTrainingWorkspace:
                 val_metrics = self._evaluate(val_loader, step_id)
                 self.model.train()
 
-                # Save checkpoint
-                val_loss = val_metrics.get("val/traj_pos_acc_001", None)
+                # Save checkpoint. Monitor traj_pos_l2 (lower=better, matches
+                # the `metric <= best_loss` direction in _save_checkpoint).
+                # The previous monitor traj_pos_acc_001 saturated at 0 early
+                # in training and made every subsequent save a "new best".
+                val_loss = val_metrics.get("val/traj_pos_l2", None)
                 self._save_checkpoint(topk_manager, step_id, val_loss)
 
                 if self.use_wandb:
@@ -767,7 +770,7 @@ class DiffuserActorTrainingWorkspace:
             return
 
         logger.info(f"Loading checkpoint: {checkpoint_path}")
-        ckpt = torch.load(checkpoint_path, map_location="cpu")
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
         self.model.load_state_dict(ckpt["weight"])
         if "optimizer" in ckpt:

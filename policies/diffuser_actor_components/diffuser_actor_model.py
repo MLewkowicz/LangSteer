@@ -329,7 +329,9 @@ class DiffuserActor(nn.Module):
     def normalize_pos(self, pos):
         pos_min = self.gripper_loc_bounds[0].float().to(pos.device)
         pos_max = self.gripper_loc_bounds[1].float().to(pos.device)
-        return (pos - pos_min) / (pos_max - pos_min) * 2.0 - 1.0
+        # Clamp so PCD background points (outside the calibrated workspace) map
+        # to ±1 rather than unbounded values that corrupt position encodings.
+        return ((pos - pos_min) / (pos_max - pos_min) * 2.0 - 1.0).clamp(-1.0, 1.0)
 
     def unnormalize_pos(self, pos):
         pos_min = self.gripper_loc_bounds[0].float().to(pos.device)

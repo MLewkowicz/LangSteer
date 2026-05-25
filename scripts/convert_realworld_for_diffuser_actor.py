@@ -200,7 +200,8 @@ def nearest_frame_indices(state_ts: np.ndarray,
 # Per-episode processing
 # ---------------------------------------------------------------------------
 
-def detect_gripper_segments(gripper: np.ndarray) -> list[tuple[int, int]]:
+def detect_gripper_segments(gripper: np.ndarray,
+                            post_open_frames: int = 5) -> list[tuple[int, int]]:
     """Detect (start, end) frame index pairs for pick-and-place episodes.
 
     Assumes the episode starts with the gripper open, closes once around the
@@ -210,8 +211,9 @@ def detect_gripper_segments(gripper: np.ndarray) -> list[tuple[int, int]]:
         [(grasp_start, grasp_end)]                              if no release
         []                                                      if no close
     The endpoints are *inclusive*: grasp_end is the first frame where the
-    gripper is observed closed; place_end is the first frame where it is
-    observed open again.
+    gripper is observed closed; place_end is post_open_frames past the first
+    frame where the gripper is observed open again, so the release motion is
+    fully captured in the training segment.
     """
     diffs = np.diff(gripper.astype(np.float64))
     closes = np.where(diffs < -0.5)[0]
@@ -226,7 +228,8 @@ def detect_gripper_segments(gripper: np.ndarray) -> list[tuple[int, int]]:
     if len(opens_after) == 0:
         return [grasp_seg]
     open_idx = int(opens_after[0])         # last frame with gripper CLOSED
-    place_end = open_idx + 1               # first frame with gripper OPEN again
+    # Extend slightly past the open command so the release motion is included.
+    place_end = min(open_idx + 1 + post_open_frames, len(gripper) - 1)
     place_seg = (grasp_end, place_end)     # share the close frame as boundary
     return [grasp_seg, place_seg]
 
@@ -514,6 +517,10 @@ def main() -> int:
                         help="Output scene folder; the dataset loader globs {scene}+0/*.dat. Default D matches the existing CALVIN configs.")
     parser.add_argument("--limit", type=int, default=0,
                         help="Process only the first N episodes (debug).")
+    parser.add_argument("--post_open_frames", type=int, default=5,
+                        help="Extra frames to include after the gripper-open event when "
+                             "auto-segmenting the place sub-episode. At state_stride=2 (~5Hz), "
+                             "5 frames ≈ 1 second of release motion. Default 5.")
     parser.add_argument("--auto_segment_object", default=None,
                         help="If set, every episode is auto-split by gripper "
                              "transitions into a 'grasp <obj>' segment (until "
@@ -614,7 +621,8 @@ def main() -> int:
             # Read the gripper trajectory once to find transitions.
             with h5py.File(sp, "r") as fs:
                 gripper_full = fs["gripper_open"][:]
-            segs = detect_gripper_segments(gripper_full)
+            segs = detect_gripper_segments(gripper_full,
+                                           post_open_frames=args.post_open_frames)
             if not segs:
                 print(f"  SKIP {name}: no gripper close detected")
                 continue
