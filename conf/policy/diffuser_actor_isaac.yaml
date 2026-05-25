@@ -29,12 +29,20 @@ use_object_id: true
 num_objects: 2              # ISAAC_OBJECT_VOCAB (alphabetical): bowl=0, mug=1
 fps_subsampling_factor: 3
 
-# gripper_loc_bounds — workspace-relative bounds in Isaac coordinates,
-# calibrated from ee_pose[:, :3] across all 83 demos in data/isaac_sim_demos
-# (2026-05-24) + 1 cm buffer on each side.  Action normalization scales
-# Isaac trajectories against this box; recompute and update whenever the
-# robot's mounting position or the table geometry changes.
-gripper_loc_bounds: [[-1.0659, 1.8529, 0.8055], [-0.2167, 2.4055, 1.3562]]
+# gripper_loc_bounds — the model uses this to normalize THREE tensors to
+# [-1, 1] against the same box (see diffuser_actor_model.py:447-451):
+#   1) gt_trajectory[:, :, :3]   — action targets
+#   2) pcd_obs[..., :3]          — per-pixel point cloud (world XYZ)
+#   3) curr_gripper[..., :3]     — current gripper position
+# So the box must cover the UNION of (a) every ee_pose the robot reaches AND
+# (b) every PCD point the cameras see — not just the EE trajectory.
+#
+# Calibrated 2026-05-25 from all 83 demos in data/isaac_sim_demos:
+#   ee_pose       : x ∈ [-1.06, -0.23]  y ∈ [+1.86, +2.40]  z ∈ [+0.82, +1.35]
+#   PCD (1/99 pc) : x ∈ [-2.41, +0.80]  y ∈ [+0.47, +3.00]  z ∈ [+0.90, +4.62]
+# Bounds below = union + 5 cm buffer.  Recompute whenever the USD camera
+# placement, robot mount pose, or scene geometry changes.
+gripper_loc_bounds: [[-2.4558, 0.4230, 0.7655], [0.8454, 3.0449, 4.6649]]
 
 rotation_parametrization: "6D"
 quaternion_format: "wxyz"
