@@ -1,0 +1,91 @@
+# 3D Diffuser Actor Training — Primitive + Object Conditioning, real-world Franka
+# Inherits from the CALVIN primitive_object recipe; overrides only paths + small
+# tuning knobs that differ for the ~95-episode wrist-ZED + overhead teleop set
+# in /home/clear/Documents/michal/realworld_3da.
+#
+# Prerequisites:
+#   1. Edit /home/clear/Documents/michal/realworld_annotations.json so each
+#      episode has the correct primitive (grasp/push/pull/place/rotate) and
+#      object (block / blue_block / drawer_handle / led_button /
+#      lightbulb_switch / pink_block / red_block / slider_handle).
+#   2. uv run python scripts/convert_realworld_for_diffuser_actor.py \
+#         --raw_dir /home/clear/Documents/michal/replayed \
+#         --save_path /home/clear/Documents/michal/realworld_3da \
+#         --annotations /home/clear/Documents/michal/realworld_annotations.json
+#   3. uv run python scripts/train_diffuser_actor.py \
+#         training=diffuser_actor_realworld_primitive_object
+
+defaults:
+  - diffuser_actor_primitive_object
+
+policy:
+  # Relative-frame bounds: the model sees displacements after
+  # `to_relative_action` (traj − traj[0]) and `convert2rel` (pcd / gripper
+  # history − curr_gripper). Computed from all 162 .dat files via
+  #   uv run python scripts/compute_relative_gripper_loc_bounds.py \
+  #     --dat_dir /home/clear/Documents/michal/realworld_3da --margin 0.10
+  # Raw delta extrema (union of trajectory, gripper-history, action-target):
+  #   min: [-0.1280, -0.0737, -0.1775]   max: [0.1190, 0.0750, 0.1654]
+  # With 0.10 m margin per side. Dominant axis is Z (vertical reach in
+  # grasp/place). CALVIN's bounds (~2× wider) under-utilised the [-1, 1] cube
+  # for this dataset; tighter delta bounds restore diffusion signal strength.
+  gripper_loc_bounds: [[-0.2280, -0.1737, -0.2775], [0.2190, 0.1750, 0.2654]]
+  relative: true
+
+  # Fresh-from-scratch run on real-world wine-glass pick-and-place: the only
+  # primitives present are grasp/place and the only object is the wine glass,
+  # so the model's embedding tables should be sized to that. These overrides
+  # bypass the default CALVIN vocabs (5 primitives × 8 objects) baked into
+  # DiffuserActorTrainingWorkspace.
+  num_primitives: 2
+  primitive_vocab:
+    grasp: 0
+    place: 1
+  num_objects: 1
+  object_vocab:
+    glass: 0
+
+dataset:
+  train_path: "/home/clear/Documents/michal/realworld_3da/training"
+  val_path:   "/home/clear/Documents/michal/realworld_3da/validation"
+  instructions_path: null
+  primitive_ann_path_train: "/home/clear/Documents/michal/realworld_3da/training/lang_annotations/primitive_object_lang_ann.npy"
+  primitive_ann_path_val:   "/home/clear/Documents/michal/realworld_3da/validation/lang_annotations/primitive_object_lang_ann.npy"
+  taskvar:
+    - ["D", 0]
+  # Episodes are 14-60 keyframes long; max_episode_length=5 keeps the random
+  # chunk slicing in CalvinDataset.__getitem__ stable on short episodes.
+  max_episode_length: 5
+  max_episodes_per_task: -1
+  cache_size: 64
+  cache_size_val: 16
+  image_rescale: "0.75,1.25"   # standard augmentation range; ~95 episodes is large enough
+  dense_interpolation: true
+  interpolation_length: 20
+  relative_action: true
+
+# 138 training segments × 5-frame chunks ≈ 43 iters/epoch at batch_size=16, so
+# 40k iters ≈ 930 epochs. The previous 100k run had saturated val rot/pos
+# metrics well before 30k; the extra steps were burning cosine-decayed lr on
+# noise. 40k ≈ 4-5h on a single RTX 5090.
+train_iters: 40000
+batch_size: 16
+batch_size_val: 4
+num_workers: 4
+lr: 1.0e-4              # matches v1; 3e-4 was too hot on ~95-episode real-world set
+wd: 1.0e-3
+accumulate_grad_batches: 1
+lr_warmup_steps: 500
+grad_clip: 1.0
+
+val_freq: 500
+log_freq: 10
+
+use_ema: true
+ema_power: 0.75
+ema_max_value: 0.9999
+
+checkpoint_dir: "outputs/checkpoints/diffuser_actor_realworld_primitive_object_v2"
+experiment_name: "diffuser_actor_realworld_primitive_object_${now:%Y%m%d_%H%M%S}"
+use_wandb: true
+wandb_project: "langsteer_diffuser_actor"

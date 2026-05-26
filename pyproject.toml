@@ -3,8 +3,16 @@ name = "langsteer"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10,<3.11"
 dependencies = [
+    "zero-franky",
+    "franky-control",
+    "robot-descriptions",
+    "threedmouse",
+    "trimesh",
+    "viser",
+    "xacrodoc",
+    "yourdfpy",
     "hydra-core>=1.3.2",
     "numpy>=2.2.6",
     "torch>=2.10.0",
@@ -31,9 +39,11 @@ dependencies = [
     "anthropic>=0.84.0",
     "openai>=2.27.0",
     "blosc>=1.11.4",
-    "h5py>=3.0",
+    "h5py>=3.16.0",
     "wandb>=0.25.1",
     "pyspacemouse>=2.0.0",
+    "opencv-python-headless>=4.13.0.92",
+    "pyzed>=5.2",
 ]
 
 [dependency-groups]
@@ -52,7 +62,11 @@ sagemaker = [
     "sagemaker>=3.0",
     "boto3",
 ]
-
+[project.optional-dependencies]
+camera = [
+    "pyzed",
+    "opencv-python>=4.5",
+]
 [build-system]
 requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -64,3 +78,9 @@ exclude = ["calvin*", "3D-Diffusion-Policy*", "3d_diffuser_actor*", "conf*"]
 [tool.uv.sources]
 pyopengl = { git = "https://github.com/mmatl/pyopengl.git", rev = "76d1261adee2d3fd99b418e75b0416bb7d2865e6" }
 clip = { git = "https://github.com/openai/CLIP.git" }
+zero-franky = { path = "../zero_franky", editable = true }
+pyzed = { url = "https://download.stereolabs.com/zedsdk/5.2/whl/linux_x86_64/pyzed-5.2-cp310-cp310-linux_x86_64.whl" }
+franky-control = { url = "https://github.com/nickswalker/franky/releases/download/wheels-libfranka-0.21.1/franky_control-1.1.3+impedance.libfranka.0.21.1-cp310-cp310-manylinux_2_28_x86_64.whl" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

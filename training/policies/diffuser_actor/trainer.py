@@ -397,10 +397,11 @@ class DiffuserActorTrainingWorkspace:
             return sample["instr"].to(self.device)
         return None
 
-    # Master vocabularies. Sizes are decoupled from the model's num_primitives /
-    # num_objects: a config with num_primitives=4 and old data (no `rotate`) is
-    # legal; a config with num_primitives<5 and a rotate-bearing ann file fails
-    # fast with a clear "out of range" error.
+    # Default master vocabularies (CALVIN). Override per-config by setting
+    # `policy.primitive_vocab` / `policy.object_vocab` to a string→int dict —
+    # used by fresh-from-scratch runs on datasets with different vocabularies
+    # (e.g. the real-world wine-glass run uses {"glass": 0} only).
+    # Sizes are decoupled from the model's num_primitives / num_objects.
     # Primitive ids: insertion order from action_primitive_object_annotations.json.
     PRIMITIVE_VOCAB = {"grasp": 0, "push": 1, "pull": 2, "place": 3, "rotate": 4}
     # Object ids: ALPHABETICAL ORDER. This is what was used to train the
@@ -438,7 +439,9 @@ class DiffuserActorTrainingWorkspace:
             tasks = list(info["primitive"])
         else:
             tasks = list(ann["language"]["task"])
-        vocab = DiffuserActorTrainingWorkspace.PRIMITIVE_VOCAB
+        vocab_override = policy_cfg.get("primitive_vocab", None)
+        vocab = (dict(vocab_override) if vocab_override is not None
+                 else DiffuserActorTrainingWorkspace.PRIMITIVE_VOCAB)
         num_primitives = policy_cfg.get("num_primitives", 4)
         ids = np.array([vocab[str(t)] for t in tasks], dtype=np.int64)
         max_id = int(ids.max()) if len(ids) else -1
@@ -470,7 +473,9 @@ class DiffuserActorTrainingWorkspace:
                 "field. Regenerate with preprocess_primitive_object_annotations.py."
             )
         objects = list(info["object"])
-        vocab = DiffuserActorTrainingWorkspace.OBJECT_VOCAB
+        vocab_override = policy_cfg.get("object_vocab", None)
+        vocab = (dict(vocab_override) if vocab_override is not None
+                 else DiffuserActorTrainingWorkspace.OBJECT_VOCAB)
         num_objects = policy_cfg.get("num_objects", 8)
         ids = np.array([vocab[str(o)] for o in objects], dtype=np.int64)
         max_id = int(ids.max()) if len(ids) else -1
@@ -664,8 +669,11 @@ class DiffuserActorTrainingWorkspace:
                 val_metrics = self._evaluate(val_loader, step_id)
                 self.model.train()
 
-                # Save checkpoint
-                val_loss = val_metrics.get("val/traj_pos_acc_001", None)
+                # Save checkpoint. Monitor traj_pos_l2 (lower=better, matches
+                # the `metric <= best_loss` direction in _save_checkpoint).
+                # The previous monitor traj_pos_acc_001 saturated at 0 early
+                # in training and made every subsequent save a "new best".
+                val_loss = val_metrics.get("val/traj_pos_l2", None)
                 self._save_checkpoint(topk_manager, step_id, val_loss)
 
                 if self.use_wandb:
@@ -818,7 +826,7 @@ class DiffuserActorTrainingWorkspace:
             return
 
         logger.info(f"Loading checkpoint: {checkpoint_path}")
-        ckpt = torch.load(checkpoint_path, map_location="cpu")
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
         # Load weights into the unwrapped model — strip a legacy `.module.`
         # prefix if the checkpoint was saved by an older DDP-only path.

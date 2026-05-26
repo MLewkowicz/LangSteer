@@ -334,6 +334,37 @@ class DiffuserActorBasePolicy(BasePolicy):
 
         return np.concatenate([pos, euler, gripper], axis=-1)
 
+    def _convert_action_relative(
+        self, trajectory: torch.Tensor, curr_gripper: torch.Tensor
+    ) -> np.ndarray:
+        """Relative model output (B, L, 8) -> absolute action (B, L, 7).
+
+        Composes rotations as proper SO(3) elements (quaternion product) rather
+        than adding Euler components. Matches the training-side relativisation
+        R_rel = R_base.T @ R_target so that R_world = R_base @ R_rel. Position
+        is still an additive world-frame delta, which IS correct.
+        """
+        from pytorch3d.transforms import quaternion_multiply
+
+        traj = trajectory.clone()
+        pos_rel = traj[..., :3]
+        quat_rel = traj[..., 3:7]
+        openness = traj[..., 7:]
+
+        if self._quaternion_format == "xyzw":
+            quat_rel = quat_rel[..., [3, 0, 1, 2]]  # xyzw -> wxyz
+
+        base = curr_gripper[:, [-1], :]              # (B, 1, 7) = [pos, quat_wxyz]
+        base_pos = base[..., :3]
+        base_quat = base[..., 3:7]
+
+        pos_world = (pos_rel + base_pos).cpu().numpy()
+        quat_world = quaternion_multiply(base_quat, quat_rel)  # body-frame compose
+        euler_world = self._convert_quat_to_euler(quat_world)
+        gripper = (2 * (openness >= 0.5).long() - 1).cpu().numpy()
+
+        return np.concatenate([pos_world, euler_world, gripper], axis=-1)
+
     # ------------------------------------------------------------------
     # Steering hookup
     # ------------------------------------------------------------------
@@ -428,28 +459,16 @@ class DiffuserActorBasePolicy(BasePolicy):
                     f"openness={t[7].item():.3f}"
                 )
 
-            action_np = self._convert_action(trajectory)
-
-            if _diag:
-                logger.info(f"[Diag] after_convert[0]: {action_np[0, 0]}")
-
             if self._relative:
-                # Pad gripper with a dummy openness slot to match _convert_action.
-                gripper_last = curr_gripper[:, [-1], :]
-                gripper_padded = torch.cat(
-                    [gripper_last, torch.zeros_like(gripper_last[..., :1])],
-                    dim=-1,
-                )
-                gripper_euler = self._convert_action(gripper_padded)
+                action_np = self._convert_action_relative(trajectory, curr_gripper)
                 if _diag:
-                    logger.info(
-                        f"[Diag] gripper_euler (base pose): {gripper_euler[0, 0]}"
-                    )
-                action_np[..., :3] += gripper_euler[..., :3]
-                action_np[..., 3:6] += gripper_euler[..., 3:6]
+                    logger.info(f"[Diag] after_rel2abs[0]: {action_np[0, 0]}")
+            else:
+                action_np = self._convert_action(trajectory)
+                if _diag:
+                    logger.info(f"[Diag] after_convert[0]: {action_np[0, 0]}")
 
             if _diag:
-                logger.info(f"[Diag] after_rel2abs[0]: {action_np[0, 0]}")
                 self._log_count += 1
 
             action_np = action_np.squeeze(0)
