@@ -344,7 +344,9 @@ class DiffuserActorBasePolicy(BasePolicy):
         R_rel = R_base.T @ R_target so that R_world = R_base @ R_rel. Position
         is still an additive world-frame delta, which IS correct.
         """
-        from pytorch3d.transforms import quaternion_multiply
+        from training.policies.diffuser_actor.preprocessing.pytorch3d_transforms import (
+            quaternion_multiply,
+        )
 
         traj = trajectory.clone()
         pos_rel = traj[..., :3]

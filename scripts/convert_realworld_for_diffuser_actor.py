@@ -409,18 +409,64 @@ def _process_segment(state_ts: np.ndarray,
     return len(frame_ids)
 
 
+# Effective state rate the rest of the pipeline (keypose discovery, stride-5
+# accel buffer, etc.) was tuned for. v0 data lived at ~10 Hz raw with a default
+# state_stride=2, i.e. an effective ~5 Hz. v1 raw is ~260 Hz, so leaving stride
+# at 2 produces ~130 Hz and shatters keypose semantics. Auto-detection brings
+# any recording back to this target.
+TARGET_EFFECTIVE_RATE_HZ = 5.0
+
+
+def _auto_state_stride(state_ts: np.ndarray, default_stride: int = 2) -> int:
+    """Pick a stride that brings state_ts down to ~TARGET_EFFECTIVE_RATE_HZ.
+
+    Returns the larger of `default_stride` and the rate-derived stride, so
+    legacy low-rate recordings keep their original stride.
+    """
+    if len(state_ts) < 2:
+        return default_stride
+    duration = float(state_ts[-1] - state_ts[0])
+    if duration <= 0:
+        return default_stride
+    actual_hz = len(state_ts) / duration
+    derived = max(1, int(round(actual_hz / TARGET_EFFECTIVE_RATE_HZ)))
+    return max(default_stride, derived)
+
+
+def _load_cam_ts(state_h5_keys, fs_root, video_path: Path,
+                 state_h5_key: str) -> np.ndarray:
+    """Get camera timestamps either from the legacy in-state group or, if
+    that group is absent (v1+ collections), from the video file's
+    `timestamps` dataset."""
+    if state_h5_key in state_h5_keys:
+        return fs_root[state_h5_key][:]
+    with h5py.File(video_path, "r") as fv:
+        if "timestamps" not in fv:
+            raise RuntimeError(
+                f"{video_path.name} has no 'timestamps' dataset and the state "
+                f"h5 has no {state_h5_key!r}; cannot align cameras to state."
+            )
+        return fv["timestamps"][:]
+
+
 def process_episode(state_path: Path,
                     out_dat_path: Path,
                     annotation_id: int,
                     hand_extrinsics_json: Optional[Path],
                     tp_extrinsics_json: Optional[Path],
                     state_stride: int = 2,
-                    frame_range: Optional[tuple[int, int]] = None) -> int:
+                    frame_range: Optional[tuple[int, int]] = None,
+                    auto_state_stride: bool = True) -> int:
     """Convert one episode (or a slice of one) into a single packaged .dat.
 
     `frame_range`, when provided, is an inclusive (start, end) tuple of indices
     into the *raw* (pre-subsample) state arrays. The returned int is the
     number of keyframes written.
+
+    When `auto_state_stride` is True (the default), the actual stride applied
+    is `max(state_stride, derived)` where derived brings the state rate down
+    to ~TARGET_EFFECTIVE_RATE_HZ. Pass `auto_state_stride=False` to honour the
+    caller's stride verbatim.
     """
     hand_path = state_path.with_name(state_path.stem + "_hand_video.hdf5")
     tp_path = state_path.with_name(state_path.stem + "_third_person_video.hdf5")
@@ -430,11 +476,24 @@ def process_episode(state_path: Path,
         ee_pos = fs["ee_pos"][:]
         ee_rot = fs["ee_rot"][:]
         gripper = fs["gripper_open"][:]
-        hand_cam_ts = fs["camera_timestamps/hand"][:]
-        tp_cam_ts = fs["camera_timestamps/third_person"][:]
+        keys = set(fs.keys())
+        # camera_timestamps used to live as a group in the state h5; newer
+        # collections store them only in the *_video.hdf5 files. Tolerate both.
+        cam_ts_keys = set(fs["camera_timestamps"].keys()) if "camera_timestamps" in keys else set()
+        hand_cam_ts = (fs["camera_timestamps/hand"][:]
+                       if "hand" in cam_ts_keys else None)
+        tp_cam_ts = (fs["camera_timestamps/third_person"][:]
+                     if "third_person" in cam_ts_keys else None)
         hand_ext, tp_ext = load_extrinsics_for_episode(
             fs, hand_extrinsics_json, tp_extrinsics_json
         )
+
+    if hand_cam_ts is None:
+        with h5py.File(hand_path, "r") as fv:
+            hand_cam_ts = fv["timestamps"][:]
+    if tp_cam_ts is None:
+        with h5py.File(tp_path, "r") as fv:
+            tp_cam_ts = fv["timestamps"][:]
 
     if frame_range is not None:
         s, e = frame_range
@@ -442,6 +501,16 @@ def process_episode(state_path: Path,
         ee_pos = ee_pos[s:e + 1]
         ee_rot = ee_rot[s:e + 1]
         gripper = gripper[s:e + 1]
+
+    effective_stride = state_stride
+    if auto_state_stride:
+        effective_stride = _auto_state_stride(state_ts, default_stride=state_stride)
+        if effective_stride != state_stride:
+            duration = float(state_ts[-1] - state_ts[0]) if len(state_ts) >= 2 else 0.0
+            actual_hz = len(state_ts) / duration if duration > 0 else float("nan")
+            print(f"  [auto-stride] {state_path.stem}: state rate ~{actual_hz:.1f} Hz, "
+                  f"raising stride {state_stride} -> {effective_stride} "
+                  f"to land near {TARGET_EFFECTIVE_RATE_HZ:.1f} Hz")
 
     return _process_segment(
         state_ts=state_ts,
@@ -452,7 +521,7 @@ def process_episode(state_path: Path,
         tp_cam_ts=tp_cam_ts,
         hand_ext=hand_ext,
         tp_ext=tp_ext,
-        state_stride=state_stride,
+        state_stride=effective_stride,
         hand_path=hand_path,
         tp_path=tp_path,
         out_dat_path=out_dat_path,
@@ -510,7 +579,10 @@ def main() -> int:
     parser.add_argument("--third_person_extrinsics", type=Path, default=None,
                         help="Optional path to extrinsics_third_person.json overriding the per-episode root attr.")
     parser.add_argument("--state_stride", type=int, default=2,
-                        help="Subsample factor on the state trajectory before keypose detection. Default 2 (~5Hz from ~10Hz state).")
+                        help="Subsample factor on the state trajectory before keypose detection. Default 2 (~5Hz from ~10Hz state). With --auto_state_stride (default), the actual stride is max(state_stride, derived) where derived = round(raw_hz / TARGET_EFFECTIVE_RATE_HZ).")
+    parser.add_argument("--auto_state_stride", action=argparse.BooleanOptionalAction,
+                        default=True,
+                        help="Auto-raise state_stride to keep the effective post-stride rate near ~5 Hz regardless of how fast state was streamed during collection. Use --no-auto_state_stride to honour --state_stride verbatim (legacy behaviour).")
     parser.add_argument("--val_fraction", type=float, default=0.15,
                         help="Fraction of episodes routed to validation when an entry lacks an explicit `split` field.")
     parser.add_argument("--scene_tag", default="D",
@@ -596,6 +668,7 @@ def main() -> int:
             hand_extrinsics_json=args.hand_extrinsics,
             tp_extrinsics_json=args.third_person_extrinsics,
             state_stride=args.state_stride,
+            auto_state_stride=args.auto_state_stride,
             frame_range=frame_range,
         )
         label = f"{primitive} {object_}"
