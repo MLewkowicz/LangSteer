@@ -34,6 +34,10 @@ from torch.utils.data import Dataset
 from training.policies.diffuser_actor.preprocessing.calvin_utils import (
     convert_rotation,
 )
+from training.policies.diffuser_actor.preprocessing.pytorch3d_transforms import (
+    euler_angles_to_matrix,
+    matrix_to_euler_angles,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +77,21 @@ def _euler_to_quat_concat(ee: np.ndarray) -> np.ndarray:
     quat = convert_rotation(euler.reshape(-1, 3)).reshape(*euler.shape[:-1], 4)
     grip = ee[..., 6:]
     return np.concatenate([pos, quat, grip], axis=-1)
+
+
+def _euler_relativize(target_euler: np.ndarray, base_euler: np.ndarray) -> np.ndarray:
+    """Body-frame rotation delta R_rel = R_base.T @ R_target, returned as
+    principal Euler XYZ. Mirrors calvin_utils.to_relative_action so the
+    downstream Euler->matrix->quaternion path produces the same quaternion as
+    matrix_to_quaternion(R_rel). target_euler and base_euler must be
+    broadcastable along all but the trailing 3-dim axis.
+    """
+    target_t = torch.as_tensor(target_euler, dtype=torch.float64)
+    base_t = torch.as_tensor(base_euler, dtype=torch.float64)
+    target_R = euler_angles_to_matrix(target_t, "XYZ")
+    base_R = euler_angles_to_matrix(base_t, "XYZ")
+    rel_R = base_R.transpose(-1, -2) @ target_R
+    return matrix_to_euler_angles(rel_R, "XYZ").numpy().astype(target_euler.dtype)
 
 
 class IsaacDataset(Dataset):
@@ -223,7 +242,9 @@ class IsaacDataset(Dataset):
         )                                                                        # (N,7)
         if self._relative_action:
             action_euler[..., :3] -= gripper_euler[..., :3]
-            action_euler[..., 3:6] -= gripper_euler[..., 3:6]
+            action_euler[..., 3:6] = _euler_relativize(
+                action_euler[..., 3:6], gripper_euler[..., 3:6]
+            )
         action = torch.as_tensor(_euler_to_quat_concat(action_euler), dtype=torch.float32)
 
         # ------------------------------------------------------------------
@@ -298,12 +319,13 @@ class IsaacDataset(Dataset):
                     traj_euler[i, k] = ee_pose[src]
 
             if self._relative_action:
-                # Shift each waypoint by the current ee_pose (gripper_euler)
-                # so the trajectory frame matches the pcd/curr_gripper frame
-                # after the model's convert2rel. Position + euler only;
-                # gripper width is preserved.
+                # Shift each waypoint into the curr-ee_pose frame. Position is
+                # an additive world-frame delta; rotation composes as a body-
+                # frame SO(3) element via R_rel = R_base.T @ R_target.
                 traj_euler[..., :3] -= gripper_euler[:, None, :3]
-                traj_euler[..., 3:6] -= gripper_euler[:, None, 3:6]
+                traj_euler[..., 3:6] = _euler_relativize(
+                    traj_euler[..., 3:6], gripper_euler[:, None, 3:6]
+                )
 
             traj = torch.as_tensor(_euler_to_quat_concat(traj_euler), dtype=torch.float32)
 
