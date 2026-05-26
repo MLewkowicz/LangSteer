@@ -212,8 +212,14 @@ class IsaacDataset(Dataset):
 
         # ------------------------------------------------------------------
         # Gripper proprio + history, in CALVIN [pos, quat_wxyz, grip] layout.
+        # The gripper column is binarised against `gripper_close_threshold`
+        # (1.0 = open, 0.0 = closed) so it matches CALVIN's convention and
+        # the BCE-with-logits gripper head in DiffuserActor. The recorder
+        # writes continuous widths (~0.01–0.08 m); feeding those raw makes
+        # BCE collapse predictions toward 0 and pins gripper_acc at 0.
         # ------------------------------------------------------------------
-        gripper_euler = ee_pose[frame_ids]                                       # (N,7)
+        gripper_euler = ee_pose[frame_ids].copy()                                # (N,7)
+        gripper_euler[..., 6] = (gripper_euler[..., 6] > self._gripper_close_threshold).astype(np.float32)
         history_euler = np.stack(
             [
                 np.stack(
@@ -224,6 +230,7 @@ class IsaacDataset(Dataset):
             ],
             axis=0,
         )                                                                        # (N,nhist,7)
+        history_euler[..., 6] = (history_euler[..., 6] > self._gripper_close_threshold).astype(np.float32)
         gripper = torch.as_tensor(_euler_to_quat_concat(gripper_euler), dtype=torch.float32)
         gripper_history = torch.as_tensor(
             _euler_to_quat_concat(history_euler), dtype=torch.float32
@@ -245,6 +252,8 @@ class IsaacDataset(Dataset):
             action_euler[..., 3:6] = _euler_relativize(
                 action_euler[..., 3:6], gripper_euler[..., 3:6]
             )
+        # Binarise gripper to {0, 1} so the BCE-with-logits head trains correctly.
+        action_euler[..., 6] = (action_euler[..., 6] > self._gripper_close_threshold).astype(np.float32)
         action = torch.as_tensor(_euler_to_quat_concat(action_euler), dtype=torch.float32)
 
         # ------------------------------------------------------------------
@@ -326,6 +335,11 @@ class IsaacDataset(Dataset):
                 traj_euler[..., 3:6] = _euler_relativize(
                     traj_euler[..., 3:6], gripper_euler[:, None, 3:6]
                 )
+
+            # Binarise gripper column — the trajectory's gripper slot is what
+            # feeds `gt_openess` in the BCE-with-logits term. Without this the
+            # head sees targets in [0.01, 0.08] and learns "always closed".
+            traj_euler[..., 6] = (traj_euler[..., 6] > self._gripper_close_threshold).astype(np.float32)
 
             traj = torch.as_tensor(_euler_to_quat_concat(traj_euler), dtype=torch.float32)
 
