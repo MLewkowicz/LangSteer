@@ -52,7 +52,7 @@ dataset:
 # Smaller batch / shorter run than CALVIN — single-arm demos, single object
 # to start, so the model converges fast on a handful of episodes.  Override
 # from the CLI for production runs.
-train_iters: 50000
+train_iters: 100000
 batch_size: 8
 
 checkpoint_dir: "outputs/checkpoints/diffuser_actor_isaac"
