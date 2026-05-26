@@ -7,7 +7,11 @@ import numpy as np
 from scipy.signal import argrelextrema
 import torch
 
-from .pytorch3d_transforms import euler_angles_to_matrix, matrix_to_quaternion
+from .pytorch3d_transforms import (
+    euler_angles_to_matrix,
+    matrix_to_euler_angles,
+    matrix_to_quaternion,
+)
 
 
 def get_eef_velocity_from_trajectories(trajectories):
@@ -155,7 +159,18 @@ def convert_rotation(rot):
 
 
 def to_relative_action(actions, robot_obs, max_pos=1.0, max_orn=1.0, clip=True):
-    """Convert absolute actions to relative actions."""
+    """Convert absolute action to relative.
+
+    rel_pos = target_pos - base_pos          (world-frame translation delta)
+    rel_R   = R_base.T @ R_target            (body-frame rotation delta)
+
+    The rotation delta is returned as its *principal* Euler XYZ so the
+    downstream convert_rotation() (Euler->matrix->quaternion) produces the
+    same quaternion as matrix_to_quaternion(rel_R). This keeps the model
+    target consistent with the inference-side composition
+        R_world = R_base @ R_rel
+    instead of pretending Euler components add like Cartesian deltas.
+    """
     assert isinstance(actions, np.ndarray)
     assert isinstance(robot_obs, np.ndarray)
 
@@ -165,13 +180,12 @@ def to_relative_action(actions, robot_obs, max_pos=1.0, max_orn=1.0, clip=True):
     else:
         rel_pos = rel_pos / max_pos
 
-    # Import calvin_env utility for angle computation
-    try:
-        from calvin_env.utils.utils import angle_between_angles
-        rel_orn = angle_between_angles(robot_obs[..., 3:6], actions[..., 3:6])
-    except ImportError:
-        # Fallback: simple difference
-        rel_orn = actions[..., 3:6] - robot_obs[..., 3:6]
+    target_e = torch.as_tensor(actions[..., 3:6], dtype=torch.float64)
+    base_e = torch.as_tensor(robot_obs[..., 3:6], dtype=torch.float64)
+    target_R = euler_angles_to_matrix(target_e, "XYZ")
+    base_R = euler_angles_to_matrix(base_e, "XYZ")
+    rel_R = base_R.transpose(-1, -2) @ target_R
+    rel_orn = matrix_to_euler_angles(rel_R, "XYZ").numpy()
 
     if clip:
         rel_orn = np.clip(rel_orn, -max_orn, max_orn) / max_orn
