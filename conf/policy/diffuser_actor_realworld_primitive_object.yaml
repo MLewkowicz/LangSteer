@@ -19,18 +19,18 @@ use_object_id: true
 num_objects: 1              # glass=0
 fps_subsampling_factor: 3
 
-# Bounds calibrated from gripper+action positions across all 81 episodes
-# (162 .dat files) + 0.10 m margin. MUST match the training config — the model
-# uses these for both normalize_pos (gripper/action/PCD) and unnormalize_pos
-# at inference. Re-run scripts/compute_gripper_loc_bounds.py if new episodes
-# are added.
-gripper_loc_bounds: [[0.259, -0.410, -0.057], [0.909, 0.515, 0.851]]
+# Relative-frame bounds (delta from current gripper) computed from all 162
+# .dat files with 0.10 m margin via
+#   uv run python scripts/compute_relative_gripper_loc_bounds.py \
+#     --dat_dir /home/clear/Documents/michal/realworld_3da --margin 0.10
+# MUST match LangSteer/conf/training/diffuser_actor_realworld_primitive_object.yaml.
+gripper_loc_bounds: [[-0.2280, -0.1737, -0.2775], [0.2190, 0.1750, 0.2654]]
 
 rotation_parametrization: "6D"
 quaternion_format: "wxyz"
 diffusion_timesteps: 25
 nhist: 3
-relative: false
+relative: true
 lang_enhanced: true
 
 # Inference
