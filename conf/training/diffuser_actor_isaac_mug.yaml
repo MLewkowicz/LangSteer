@@ -1,0 +1,28 @@
+# Diffuser Actor training on Isaac Sim teleop demos for the mug pick task
+# (primitive+object policy). Inherits from diffuser_actor_isaac; overrides
+# data paths + identifying names. gripper_loc_bounds is inherited from
+# conf/policy/diffuser_actor_isaac.yaml, which was calibrated on THIS dataset
+# (83 demos / 40266 frames) — verified 2026-05-26 to match exactly.
+#
+# Portable to AWS: set ISAAC_MUG_DEMO_DIR to the dataset root on the cluster
+# (the dir that contains training/ and validation/). Falls back to the local
+# backup-drive path when the env var is unset.
+
+defaults:
+  - diffuser_actor_isaac
+
+dataset:
+  train_path: "${oc.env:ISAAC_MUG_DEMO_DIR,/media/aryannav/Backup/isaac_sim_demos_mug}/training"
+  val_path: "${oc.env:ISAAC_MUG_DEMO_DIR,/media/aryannav/Backup/isaac_sim_demos_mug}/validation"
+
+policy:
+  # Recomputed 2026-05-26 via scripts/compute_relative_gripper_loc_bounds_isaac.py
+  # on all 83 mug demos (40266 frames). Raw delta extrema (union of trajectory,
+  # gripper-history, action-target):
+  #   min: [-0.1518, -0.1240, -0.1112]   max: [0.1473, 0.1599, 0.1598]
+  # Margin: 0.10 m per side. (Identical to the inherited default; stated
+  # explicitly so a future data refresh is easy to recalibrate against.)
+  gripper_loc_bounds: [[-0.2518, -0.2240, -0.2112], [0.2473, 0.2599, 0.2598]]
+
+checkpoint_dir: outputs/checkpoints/diffuser_actor_isaac_mug
+experiment_name: diffuser_actor_isaac_mug_${now:%Y%m%d_%H%M%S}
