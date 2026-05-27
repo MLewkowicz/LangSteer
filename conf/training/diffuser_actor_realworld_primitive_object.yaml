@@ -46,6 +46,16 @@ policy:
     glass: 0
 
 dataset:
+  # "realworld" swaps in RealworldSlidingWindowDataset: instead of resampling
+  # one variable keypose interval, it takes a fixed-horizon window of the real
+  # recorded path and resamples to interpolation_length waypoints. Gives a
+  # uniform motion scale per sample. "calvin" (default) keeps keypose intervals.
+  type: realworld
+  # Window length in EFFECTIVE (post-stride, ~10 Hz) frames. 10 frames ≈ 1.0 s
+  # of motion per plan (median span ~80 mm) — real motion but short enough for
+  # safe/reactive deploy. Lower (e.g. 7 = 0.7 s) for shorter plans; avoid 5
+  # (0.5 s) — ~25% of windows go near-stationary and bias the model to collapse.
+  horizon_frames: 10
   train_path: "/home/clear/Documents/michal/realworld_3da/training"
   val_path:   "/home/clear/Documents/michal/realworld_3da/validation"
   instructions_path: null
