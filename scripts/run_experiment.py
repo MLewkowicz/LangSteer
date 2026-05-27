@@ -70,6 +70,9 @@ def instantiate_steering(cfg: DictConfig) -> BaseSteering | None:
     elif steering_name == "voxposer":
         from steering.voxposer_steering import VoxPoserSteering
         return VoxPoserSteering(OmegaConf.to_container(cfg.steering, resolve=True))
+    elif steering_name == "target_rotation":
+        from steering.target_rotation import TargetRotationSteering
+        return TargetRotationSteering(OmegaConf.to_container(cfg.steering, resolve=True))
     else:
         raise ValueError(f"Unknown steering: {steering_name}")
 

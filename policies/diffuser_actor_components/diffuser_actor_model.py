@@ -43,7 +43,10 @@ class DiffuserActor(nn.Module):
                  use_primitive_id=False,
                  num_primitives=5,
                  use_object_id=False,
-                 num_objects=8):
+                 num_objects=8,
+                 lowt_loss_weighting=False,
+                 lowt_weight_max=5.0,
+                 lowt_weight_power=1.0):
         super().__init__()
         if lang_enhanced and not use_instruction:
             raise ValueError(
@@ -98,6 +101,15 @@ class DiffuserActor(nn.Module):
         )
         self.n_steps = diffusion_timesteps
         self.gripper_loc_bounds = torch.tensor(gripper_loc_bounds)
+
+        # Low-t loss weighting: upweight the denoising loss at small timesteps
+        # (near-data noise levels), where multimodal structure separates into
+        # distinct basins. Counteracts mode collapse — at high t the score is
+        # unimodal and the net learns the mean, so uniform-t training lets the
+        # reverse process funnel into the dominant mode. Off by default.
+        self._lowt_loss_weighting = lowt_loss_weighting
+        self._lowt_weight_max = lowt_weight_max
+        self._lowt_weight_power = lowt_weight_power
 
     def encode_inputs(self, visible_rgb, visible_pcd, curr_gripper,
                       instruction=None, mask_language=False):
@@ -495,20 +507,45 @@ class DiffuserActor(nn.Module):
             noisy_trajectory, timesteps, fixed_inputs
         )
 
+        # Per-sample timestep weights (B,). Uniform when weighting is disabled.
+        # w(t) ramps from lowt_weight_max at t=0 down to 1 at t=T-1, then is
+        # renormalized to mean 1 so the overall loss scale (and effective LR)
+        # is unchanged — it redistributes emphasis toward low t, not magnitude.
+        sample_w = self._timestep_loss_weights(timesteps, noise.device)
+
         # Compute loss
         total_loss = 0
         for layer_pred in pred:
             trans = layer_pred[..., :3]
             rot = layer_pred[..., 3:9]
+            # Per-sample mean over (traj, feature) dims, then timestep-weighted
+            # mean over the batch.
+            trans_l1 = F.l1_loss(trans, noise[..., :3], reduction='none').mean(dim=(1, 2))
+            rot_l1 = F.l1_loss(rot, noise[..., 3:9], reduction='none').mean(dim=(1, 2))
             loss = (
-                30 * F.l1_loss(trans, noise[..., :3], reduction='mean')
-                + 10 * F.l1_loss(rot, noise[..., 3:9], reduction='mean')
+                30 * (sample_w * trans_l1).mean()
+                + 10 * (sample_w * rot_l1).mean()
             )
             if torch.numel(gt_openess) > 0:
                 openess = layer_pred[..., 9:]
                 loss += F.binary_cross_entropy_with_logits(openess, gt_openess)
             total_loss = total_loss + loss
         return total_loss
+
+    def _timestep_loss_weights(self, timesteps, device):
+        """Per-sample loss weights as a function of diffusion timestep.
+
+        Returns a (B,) tensor. With weighting off, all ones. With weighting on,
+        w = 1 + (max-1) * ((T-1-t)/(T-1))^power, renormalized to mean 1, so
+        small-t samples are emphasized without changing the overall loss scale.
+        """
+        b = timesteps.shape[0]
+        if not self._lowt_loss_weighting:
+            return torch.ones(b, device=device)
+        t_max = max(1, self.position_noise_scheduler.config.num_train_timesteps - 1)
+        frac_low = (t_max - timesteps.float().clamp(max=t_max)) / t_max
+        w = 1.0 + (self._lowt_weight_max - 1.0) * frac_low.pow(self._lowt_weight_power)
+        return w / w.mean().clamp(min=1e-6)
 
 
 class DiffusionHead(nn.Module):

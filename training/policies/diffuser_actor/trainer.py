@@ -201,6 +201,9 @@ class DiffuserActorTrainingWorkspace:
             num_primitives=policy_cfg.get("num_primitives", 4),
             use_object_id=policy_cfg.get("use_object_id", False),
             num_objects=policy_cfg.get("num_objects", 8),
+            lowt_loss_weighting=policy_cfg.get("lowt_loss_weighting", False),
+            lowt_weight_max=policy_cfg.get("lowt_weight_max", 5.0),
+            lowt_weight_power=policy_cfg.get("lowt_weight_power", 1.0),
         )
 
         if self.is_main_process:

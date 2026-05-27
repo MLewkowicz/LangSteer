@@ -1,0 +1,40 @@
+# Target-orientation rotation steering
+# Pulls the predicted EE rotation toward a fixed absolute target orientation.
+# Built for the bimodal place task: nudge the wrist-inversion (mode-B) basin,
+# the model completes the rotation on its own.
+#
+# Usage:
+#   uv run python scripts/run_experiment.py steering=target_rotation \
+#     steering.target_euler='[<roll>,<pitch>,<yaw>]' policy.diffusion_timesteps=100
+#
+# Robot deploy: build TargetRotationSteering(cfg), call set_rotation_scheduler(
+# policy._model.rotation_noise_scheduler), then policy.forward(obs, steering=...)
+# every step (the policy refreshes the relative target from obs.ee_pose each call).
+
+name: target_rotation
+enabled: true
+
+# Absolute target orientation as Euler XYZ (radians). For the mode-B inverted
+# place, set this to the inverted-wrist orientation (the +yaw cluster, e.g.
+# roll/pitch from the place pose with yaw ≈ +1.4). REQUIRED — no default.
+target_euler: null
+
+# Strength of the rotational pull. Start gentle; the model finishes the rotation.
+guidance_strength: 1.0
+
+# Quadratic per-horizon ramp: early waypoints get `ramp_floor` of the pull, late
+# waypoints get the full pull (the inversion happens late in the window).
+ramp_floor: 0.0
+
+# Apply guidance only at diffusion timesteps <= this. Lower it (e.g. 60 of 100)
+# to focus the nudge on the low-t band where the two rotation basins separate.
+# Large default = always on.
+start_guidance_timestep: 10000
+
+# "epsilon" adds a Tweedie ε-delta to the noise prediction; "dps" adds an x-space
+# correction to x_{t-1}. epsilon is the well-tested default.
+guidance_mode: epsilon
+
+# Pulled from the policy config.
+horizon: ${policy.pred_horizon}
+device: ${policy.device}
