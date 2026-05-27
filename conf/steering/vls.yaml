@@ -1,0 +1,34 @@
+name: vls
+
+# Guidance strength — scales the reward gradient before adding to epsilon
+guidance_strength: 15.0
+
+# Only guide low-noise steps (t <= start_guidance_timestep)
+start_guidance_timestep: 50
+
+# Diffusion parameterization (must match policy: epsilon for DiffuserActor)
+prediction_type: epsilon
+guidance_mode: epsilon
+
+# Stage transitions
+stage_proximity_threshold: 0.08  # metres — advance stage when EE this close to target
+use_grasp_gate: false
+grasp_min_width: 0.01
+grasp_max_width: 0.04
+grasp_stability_window: 3
+
+# LLM
+llm_model: "gpt-4o"
+temperature: 0.7
+max_tokens: 3000
+cache_dir: outputs/vls_cache
+
+# Isaac Sim workspace bounds (world frame)
+workspace_bounds_min: [0.0, -0.5, 0.7]
+workspace_bounds_max: [1.0, 0.5, 1.3]
+
+# Filled by policy wrapper at runtime
+gripper_loc_bounds: null
+relative: true
+horizon: 16
+device: cuda

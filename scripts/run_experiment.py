@@ -73,6 +73,9 @@ def instantiate_steering(cfg: DictConfig) -> BaseSteering | None:
     elif steering_name == "target_rotation":
         from steering.target_rotation import TargetRotationSteering
         return TargetRotationSteering(OmegaConf.to_container(cfg.steering, resolve=True))
+    elif steering_name == "vls":
+        from steering.vls_steering import VLSSteering
+        return VLSSteering(OmegaConf.to_container(cfg.steering, resolve=True))
     else:
         raise ValueError(f"Unknown steering: {steering_name}")
 
@@ -243,7 +246,12 @@ def main(cfg: DictConfig) -> None:
             _ep_robot_obs = _ep_scene_obs = None
 
         if steering is not None and hasattr(steering, 'setup_episode'):
-            if cfg.steering.name == "voxposer":
+            if cfg.steering.name == "vls":
+                # VLS steering: reset env first to get scene obs + RGB/depth
+                obs = env.reset(robot_obs=_ep_robot_obs, scene_obs=_ep_scene_obs)
+                steering.setup_episode(obs, env._task_name)
+                logger.info(f"VLS episode setup complete for: '{env.task_description}'")
+            elif cfg.steering.name == "voxposer":
                 # VoxPoser steering: reset env first, then generate value maps
                 # using the actual scene state
                 obs = env.reset(robot_obs=_ep_robot_obs, scene_obs=_ep_scene_obs)
