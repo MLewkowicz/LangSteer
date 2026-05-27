@@ -25,6 +25,7 @@ omegaconf>=2.3.0
 blosc>=1.11.4
 zarr>=2.18.3
 numcodecs>=0.12.0
+h5py>=3.16.0
 
 # --- Numerics / vision ---
 numpy>=1.24.0

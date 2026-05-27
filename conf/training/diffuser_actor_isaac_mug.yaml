@@ -1,0 +1,17 @@
+# Diffuser Actor training on Isaac Sim teleop demos for mug task.
+# Inherits from diffuser_actor_isaac; overrides data paths and gripper_loc_bounds.
+
+defaults:
+  - diffuser_actor_isaac
+
+dataset:
+  train_path: "${oc.env:ISAAC_MUG_DEMO_DIR,/home/aryannav/Backup/isaac_sim_demos_mug}/training"
+  val_path: "${oc.env:ISAAC_MUG_DEMO_DIR,/home/aryannav/Backup/isaac_sim_demos_mug}/validation"
+
+policy:
+  # Computed via scripts/compute_relative_gripper_loc_bounds_isaac.py
+  # on the mug dataset with --margin 0.10.
+  gripper_loc_bounds: [[-0.2518, -0.2240, -0.2112], [0.2473, 0.2599, 0.2598]]
+
+checkpoint_dir: outputs/checkpoints/diffuser_actor_isaac_mug
+experiment_name: diffuser_actor_isaac_mug_${now:%Y%m%d_%H%M%S}
