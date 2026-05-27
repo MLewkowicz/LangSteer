@@ -28,6 +28,9 @@ from typing import Optional
 
 from policies.diffuser_actor_components import DiffuserActor
 from training.policies.diffuser_actor.dataset import CalvinDataset, traj_collate_fn
+from training.policies.diffuser_actor.dataset_realworld import (
+    RealworldSlidingWindowDataset,
+)
 from training.policies.diffuser_actor.dataset_isaac import IsaacDataset
 from training.common.checkpoint_util import TopKCheckpointManager
 from training.common.ema_model import EMAModel
@@ -250,6 +253,8 @@ class DiffuserActorTrainingWorkspace:
 
         Dispatches on `cfg.dataset.type`:
           - "calvin" (default): packaged .dat-based CalvinDataset.
+          - "realworld":        .dat-based, but fixed-horizon sliding-window
+                                trajectories (RealworldSlidingWindowDataset).
           - "isaac":            HDF5-based IsaacDataset for Isaac Sim demos.
         """
         dataset_cfg = cfg.dataset
@@ -257,6 +262,17 @@ class DiffuserActorTrainingWorkspace:
 
         if ds_type == "isaac":
             return self._get_isaac_datasets(cfg, dataset_cfg)
+
+        # Select the .dat-based dataset class. "realworld" swaps in the
+        # sliding-window trajectory builder; everything else is identical.
+        if ds_type == "realworld":
+            dataset_cls = RealworldSlidingWindowDataset
+            extra_ds_kwargs = {
+                "horizon_frames": int(dataset_cfg.get("horizon_frames", 15)),
+            }
+        else:
+            dataset_cls = CalvinDataset
+            extra_ds_kwargs = {}
 
         # CLIP-mode instruction embeddings (.pkl with precomputed features).
         # Skipped entirely in primitive-id mode (model doesn't need them) and
@@ -305,7 +321,7 @@ class DiffuserActorTrainingWorkspace:
             float(x) for x in str(dataset_cfg.get("image_rescale", "0.75,1.25")).split(",")
         )
 
-        train_dataset = CalvinDataset(
+        train_dataset = dataset_cls(
             root=dataset_cfg.train_path,
             instructions=train_instructions,
             primitive_ids=train_primitive_ids,
@@ -322,8 +338,9 @@ class DiffuserActorTrainingWorkspace:
             dense_interpolation=dataset_cfg.get("dense_interpolation", True),
             interpolation_length=dataset_cfg.get("interpolation_length", 100),
             relative_action=dataset_cfg.get("relative_action", True),
+            **extra_ds_kwargs,
         )
-        val_dataset = CalvinDataset(
+        val_dataset = dataset_cls(
             root=dataset_cfg.val_path,
             instructions=val_instructions,
             primitive_ids=val_primitive_ids,
@@ -339,6 +356,7 @@ class DiffuserActorTrainingWorkspace:
             dense_interpolation=dataset_cfg.get("dense_interpolation", True),
             interpolation_length=dataset_cfg.get("interpolation_length", 100),
             relative_action=dataset_cfg.get("relative_action", True),
+            **extra_ds_kwargs,
         )
         return train_dataset, val_dataset
 

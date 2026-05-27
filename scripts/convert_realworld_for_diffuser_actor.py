@@ -409,12 +409,14 @@ def _process_segment(state_ts: np.ndarray,
     return len(frame_ids)
 
 
-# Effective state rate the rest of the pipeline (keypose discovery, stride-5
-# accel buffer, etc.) was tuned for. v0 data lived at ~10 Hz raw with a default
-# state_stride=2, i.e. an effective ~5 Hz. v1 raw is ~260 Hz, so leaving stride
-# at 2 produces ~130 Hz and shatters keypose semantics. Auto-detection brings
-# any recording back to this target.
-TARGET_EFFECTIVE_RATE_HZ = 5.0
+# Effective post-stride state rate to target. Chosen to match v0's per-keypose
+# traversal distribution: v0 (28 eps) had interval-span median 50.8mm / p75
+# 151.8mm at its native ~5 Hz effective. Because v1 teleop covered more distance
+# per reach, matching v0's *traversal* (not just its rate) requires a HIGHER
+# effective rate: ~10 Hz on v1 reproduces v0's p75 tail (140mm vs 152mm), while
+# 5 Hz over-fattens the tail (p75 222mm) and blows out the gripper_loc_bounds.
+# Measured via the stride sweep in the session notes; see DIFFUSER_ACTOR_DEPLOY_DEBUG.md.
+TARGET_EFFECTIVE_RATE_HZ = 10.0
 
 
 def _auto_state_stride(state_ts: np.ndarray, default_stride: int = 2) -> int:

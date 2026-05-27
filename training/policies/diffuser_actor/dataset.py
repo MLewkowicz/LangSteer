@@ -435,6 +435,22 @@ class CalvinDataset(RLBenchDataset):
 
         print(f"Created dataset from {root} with {self._num_episodes}")
 
+    def _build_traj_items(self, episode, frame_ids):
+        """Build the per-frame low-level trajectory tensors (pre-padding).
+
+        Default: one keypose-anchored trajectory per frame (episode[5][i]),
+        each interpolated to the fixed length. Subclasses can override to
+        change the trajectory horizon / sampling (e.g. fixed-time sliding
+        windows) without touching the rest of __getitem__.
+        """
+        if len(episode) > 5:
+            return [self._interpolate_traj(episode[5][i]) for i in frame_ids]
+        return [
+            self._interpolate_traj(
+                torch.cat([episode[4][i], episode[2][i]], dim=0)
+            ) for i in frame_ids
+        ]
+
     def __getitem__(self, episode_id):
         episode_id %= self._num_episodes
         task, variation, file = self._episodes[episode_id]
@@ -508,16 +524,7 @@ class CalvinDataset(RLBenchDataset):
         # Low-level trajectory
         traj, traj_lens = None, 0
         if self._return_low_lvl_trajectory:
-            if len(episode) > 5:
-                traj_items = [
-                    self._interpolate_traj(episode[5][i]) for i in frame_ids
-                ]
-            else:
-                traj_items = [
-                    self._interpolate_traj(
-                        torch.cat([episode[4][i], episode[2][i]], dim=0)
-                    ) for i in frame_ids
-                ]
+            traj_items = self._build_traj_items(episode, frame_ids)
             max_l = max(len(item) for item in traj_items)
             traj = torch.zeros(
                 len(traj_items), max_l, traj_items[0].shape[-1]
