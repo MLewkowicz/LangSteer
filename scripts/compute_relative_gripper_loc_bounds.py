@@ -46,6 +46,12 @@ def main() -> None:
                              "sliding windows (matching dataset.type=realworld with "
                              "this horizon_frames) instead of per-keypose intervals. "
                              "MUST match the training config's dataset.horizon_frames.")
+    parser.add_argument("--include_action_deltas", action="store_true",
+                        help="Include action-target deltas in the union. OFF by "
+                             "default: the diffuser model only normalises the "
+                             "trajectory and gripper-history (action target is "
+                             "unused in training), and including it needlessly "
+                             "widens the bounds.")
     args = parser.parse_args()
 
     traj_deltas: list[np.ndarray] = []
@@ -126,13 +132,17 @@ def main() -> None:
         print(f"  0.5-99.5%: [{p_lo[0]: .4f}, {p_lo[1]: .4f}, {p_lo[2]: .4f}] "
               f"-> [{p_hi[0]: .4f}, {p_hi[1]: .4f}, {p_hi[2]: .4f}]")
 
-    print(f"Scanned {n_dat} .dat files (nhist={args.nhist})")
+    print(f"Scanned {n_dat} .dat files (nhist={args.nhist}, "
+          f"horizon_frames={args.horizon_frames}, "
+          f"include_action_deltas={args.include_action_deltas})")
     print()
     _stats("trajectory deltas (traj[k] - traj[0])", traj)
     _stats("gripper-history deltas (g[i-k] - g[i])", hist)
-    _stats("action-target deltas (action[i] - g[i])", act)
+    _stats("action-target deltas (action[i] - g[i]) [%s]"
+           % ("INCLUDED" if args.include_action_deltas else "EXCLUDED from union"), act)
 
-    all_d = np.concatenate([traj, hist, act], axis=0)
+    union_parts = [traj, hist] + ([act] if args.include_action_deltas else [])
+    all_d = np.concatenate(union_parts, axis=0)
     lo = all_d.min(0)
     hi = all_d.max(0)
     lo_m = lo - args.margin
