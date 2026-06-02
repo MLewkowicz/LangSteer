@@ -73,8 +73,16 @@ def parse_args():
         "--tries-per-episode", type=int, default=1,
         help="Re-roll each starting condition this many times with different "
              "model seeds (same scene, different diffusion noise). Total rollouts "
-             "per task = (post-filter conditions) * tries_per_episode. For P4 with "
-             "5 valid scenes and tries=4, that's 20 rollouts/task.",
+             "per task = (post-filter conditions) * tries_per_episode. Ordering: "
+             "all tries of cond 0, then all tries of cond 1, ...",
+    )
+    parser.add_argument(
+        "--target-trials-per-task", type=int, default=None,
+        help="Alternative to --tries-per-episode: keep cycling through the valid "
+             "starting conditions, reseeding the model on each pass, until each "
+             "task has exactly this many rollouts. Ordering: pass 0 covers cond "
+             "0..N-1, then pass 1, etc. — every scene gets equal coverage even if "
+             "the loop is interrupted. Mutually exclusive with --tries-per-episode.",
     )
     parser.add_argument("--max-steps", type=int, default=360, help="Max env steps per episode")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for starting conditions")
@@ -294,6 +302,7 @@ def run_condition(
     perturbation_axis: str = None,
     p4_valid_indices: Dict[str, List[int]] = None,
     tries_per_episode: int = 1,
+    target_trials_per_task: Optional[int] = None,
 ):
     """Run evaluation for a single condition, saving after every episode."""
     condition_name = eval_cfg["condition_name"]
@@ -308,18 +317,21 @@ def run_condition(
             "max_steps": max_steps,
             "perturbation_axis": perturbation_axis,
             "tries_per_episode": tries_per_episode,
+            "target_trials_per_task": target_trials_per_task,
             "tasks": {},
         }
     else:
-        # Resume must reuse the same tries_per_episode so the (condition_idx,
+        # Resume must reuse the same loop mode so the (condition_idx,
         # attempt_idx) layout of the flat episode list stays consistent.
         prev_tries = results.get("tries_per_episode", 1)
-        if prev_tries != tries_per_episode:
+        prev_target = results.get("target_trials_per_task")
+        if prev_tries != tries_per_episode or prev_target != target_trials_per_task:
             logger.error(
                 f"Existing results in {results_path} were produced with "
-                f"tries_per_episode={prev_tries}, but this run requested "
-                f"tries_per_episode={tries_per_episode}. Resume would shuffle "
-                f"the condition/attempt mapping. Start a new --output-dir."
+                f"tries_per_episode={prev_tries}, target_trials_per_task={prev_target}, "
+                f"but this run requested tries_per_episode={tries_per_episode}, "
+                f"target_trials_per_task={target_trials_per_task}. Resume would "
+                f"shuffle the condition/attempt mapping. Start a new --output-dir."
             )
             sys.exit(1)
 
@@ -380,7 +392,11 @@ def run_condition(
             logger.info(f"  [P4] Filtered {task_name} to {len(valid)} valid starting conditions")
 
         n_available = min(num_episodes, len(conditions))
-        total_attempts = n_available * tries_per_episode
+        if target_trials_per_task is not None:
+            # Cycling mode: pass 0 covers cond 0..N-1, pass 1 covers cond 0..N-1, ...
+            total_attempts = target_trials_per_task
+        else:
+            total_attempts = n_available * tries_per_episode
 
         # Initialize task entry if missing
         if task_name not in results["tasks"]:
@@ -400,7 +416,12 @@ def run_condition(
             continue
 
         logger.info(f"\n  Task: {task_name} ({env.task_description})")
-        if tries_per_episode > 1:
+        if target_trials_per_task is not None:
+            logger.info(
+                f"    Cycling {n_available} conditions to hit {total_attempts} "
+                f"trials; resuming from trial {completed + 1}/{total_attempts}"
+            )
+        elif tries_per_episode > 1:
             logger.info(
                 f"    {n_available} conditions × {tries_per_episode} tries = "
                 f"{total_attempts} rollouts; resuming from rollout "
@@ -410,9 +431,14 @@ def run_condition(
             logger.info(f"    Resuming from episode {completed + 1}/{total_attempts}")
 
         for flat_idx in range(completed, total_attempts):
-            # Flat list shape: (cond=0, att=0..T-1), (cond=1, att=0..T-1), ...
-            condition_idx = flat_idx // tries_per_episode
-            attempt_idx = flat_idx % tries_per_episode
+            if target_trials_per_task is not None:
+                # Cycling: (cond=0, att=0), (cond=1, att=0), ..., (cond=0, att=1), ...
+                condition_idx = flat_idx % n_available
+                attempt_idx = flat_idx // n_available
+            else:
+                # Sequential: (cond=0, att=0..T-1), (cond=1, att=0..T-1), ...
+                condition_idx = flat_idx // tries_per_episode
+                attempt_idx = flat_idx % tries_per_episode
 
             robot_obs, scene_obs = conditions[condition_idx]
             source_episode_id = (
@@ -646,6 +672,13 @@ def main():
 
     args = parse_args()
 
+    if args.target_trials_per_task is not None and args.tries_per_episode != 1:
+        logger.error(
+            "--target-trials-per-task and --tries-per-episode are mutually "
+            "exclusive (they impose different iteration orderings). Pick one."
+        )
+        sys.exit(1)
+
     # Output directory (axis-prefixed when using a perturbed run so axes don't collide)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     if args.output_dir:
@@ -687,7 +720,16 @@ def main():
 
     # All tasks (union across configs, preserving order from first)
     all_tasks = eval_configs[0][1]["tasks"]
-    if args.tries_per_episode > 1:
+    if args.target_trials_per_task is not None:
+        suffix = (
+            " (cycles over P4-valid scenes per task)"
+            if args.perturbation_axis == "P4" else ""
+        )
+        logger.info(
+            f"Evaluating {len(all_tasks)} tasks, pool={args.num_episodes}, "
+            f"cycling to {args.target_trials_per_task} trials/task{suffix}"
+        )
+    elif args.tries_per_episode > 1:
         suffix = (
             " (P4 filter will further narrow the per-task condition count)"
             if args.perturbation_axis == "P4" else ""
@@ -795,6 +837,7 @@ def main():
             perturbation_axis=args.perturbation_axis,
             p4_valid_indices=p4_valid_indices,
             tries_per_episode=args.tries_per_episode,
+            target_trials_per_task=args.target_trials_per_task,
         )
 
     logger.info(f"\nResults saved to: {output_dir}")
