@@ -68,11 +68,11 @@ dataset:
   # safe/reactive deploy. Lower (e.g. 7 = 0.7 s) for shorter plans; avoid 5
   # (0.5 s) — ~25% of windows go near-stationary and bias the model to collapse.
   horizon_frames: 10
-  train_path: "/home/clear/Documents/michal/realworld_3da_v6/training"
-  val_path:   "/home/clear/Documents/michal/realworld_3da_v6/validation"
+  train_path: "/home/clear/Documents/michal/realworld_3da_v2/training"
+  val_path:   "/home/clear/Documents/michal/realworld_3da_v2/validation"
   instructions_path: null
-  primitive_ann_path_train: "/home/clear/Documents/michal/realworld_3da_v6/training/lang_annotations/primitive_object_lang_ann.npy"
-  primitive_ann_path_val:   "/home/clear/Documents/michal/realworld_3da_v6/validation/lang_annotations/primitive_object_lang_ann.npy"
+  primitive_ann_path_train: "/home/clear/Documents/michal/realworld_3da_v2/training/lang_annotations/primitive_object_lang_ann.npy"
+  primitive_ann_path_val:   "/home/clear/Documents/michal/realworld_3da_v2/validation/lang_annotations/primitive_object_lang_ann.npy"
   taskvar:
     - ["D", 0]
   # Episodes are 14-60 keyframes long; max_episode_length=5 keeps the random

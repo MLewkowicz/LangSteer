@@ -1,9 +1,14 @@
 """Convert real-world Franka teleop data → 3D Diffuser Actor packaged format.
 
 The collected data lives under a directory with one episode per triple:
-    episode_<ts>.h5                       (state + camera timestamps + extrinsics)
-    episode_<ts>_hand_video.hdf5          (wrist ZED RGB + depth)
-    episode_<ts>_third_person_video.hdf5  (overhead RGB + depth)
+    <stem>.h5                       (state + camera timestamps + extrinsics)
+    <stem>_hand_video.hdf5          (wrist ZED RGB + depth)
+    <stem>_third_person_video.hdf5  (overhead RGB + depth)
+
+`<stem>` is naming-agnostic: handles legacy `episode_<ts>` and the newer
+`<task>_<demo>_<execution>` (e.g. cabinet_0_0, wine_rack_3_1) layouts.
+State h5s without the paired video siblings (e.g. unreplayed source demos)
+are auto-skipped by `_discover_state_files`.
 
 This script:
   1. Reads state (ee_pos, ee_rot, gripper_open, timestamps).
@@ -24,9 +29,9 @@ This script:
      the .dat files (one annotation per episode), with `info.primitive` and
      `info.object` arrays populated from a small per-episode JSON.
 
-Annotation JSON format (one entry per episode_*.h5 basename, without .h5):
+Annotation JSON format (one entry per state .h5 basename, without .h5):
     {
-      "episode_20260522_163745": {
+      "cabinet_0_0": {
         "primitive": "grasp",
         "object": "red_block",
         "split": "training"  // optional; defaults below
@@ -205,15 +210,17 @@ def detect_gripper_segments(gripper: np.ndarray,
     """Detect (start, end) frame index pairs for pick-and-place episodes.
 
     Assumes the episode starts with the gripper open, closes once around the
-    target object, optionally opens once to release it, and is then truncated.
-    Returns:
-        [(grasp_start, grasp_end), (place_start, place_end)]   if both events
-        [(grasp_start, grasp_end)]                              if no release
+    target object, and either (a) opens once to release it (the trajectory is
+    then truncated post_open_frames past the open) or (b) never re-opens
+    (the entire post-grasp trajectory is taken as the place — e.g. demos
+    where the gripper stays closed through the place because the demonstrator
+    never released, or the release happened off-camera). Returns:
+        [(grasp_start, grasp_end), (place_start, place_end)]   if any close
         []                                                      if no close
     The endpoints are *inclusive*: grasp_end is the first frame where the
-    gripper is observed closed; place_end is post_open_frames past the first
-    frame where the gripper is observed open again, so the release motion is
-    fully captured in the training segment.
+    gripper is observed closed; place_end is either post_open_frames past
+    the first frame where the gripper is observed open again (release case),
+    or the last frame of the episode (no-release fallback).
     """
     diffs = np.diff(gripper.astype(np.float64))
     closes = np.where(diffs < -0.5)[0]
@@ -226,10 +233,14 @@ def detect_gripper_segments(gripper: np.ndarray,
     # Find the first open *after* the close (ignores any spurious early opens).
     opens_after = opens[opens > close_idx]
     if len(opens_after) == 0:
-        return [grasp_seg]
-    open_idx = int(opens_after[0])         # last frame with gripper CLOSED
-    # Extend slightly past the open command so the release motion is included.
-    place_end = min(open_idx + 1 + post_open_frames, len(gripper) - 1)
+        # No release in this episode — keep the entire post-close trajectory
+        # as the place segment. The labelling in the main loop still tags
+        # this as 'place' because it is the second segment returned.
+        place_end = len(gripper) - 1
+    else:
+        open_idx = int(opens_after[0])     # last frame with gripper CLOSED
+        # Extend slightly past the open command so the release motion is included.
+        place_end = min(open_idx + 1 + post_open_frames, len(gripper) - 1)
     place_seg = (grasp_end, place_end)     # share the close frame as boundary
     return [grasp_seg, place_seg]
 
@@ -535,10 +546,32 @@ def process_episode(state_path: Path,
 # CLI
 # ---------------------------------------------------------------------------
 
+def _discover_state_files(raw_dir: Path) -> list[Path]:
+    """Return state h5 files that have BOTH paired video files alongside.
+
+    Naming-agnostic — works for old `episode_<ts>.h5` and the new
+    `<task>_<demo>_<execution>.h5` layouts (e.g. cabinet_0_0.h5,
+    wine_rack_3_1.h5). Source-only state files (no cameras — e.g. a
+    `cabinet_0.h5` original without `cabinet_0_hand_video.hdf5` next to
+    it) are automatically skipped.
+    """
+    out: list[Path] = []
+    for p in sorted(raw_dir.glob("*.h5")):
+        # Defensive: skip anything that smells like a video file (videos
+        # normally use .hdf5, but don't trust extensions in mixed dirs).
+        if p.stem.endswith(("_hand_video", "_third_person_video")):
+            continue
+        hand = p.with_name(p.stem + "_hand_video.hdf5")
+        tp = p.with_name(p.stem + "_third_person_video.hdf5")
+        if hand.is_file() and tp.is_file():
+            out.append(p)
+    return out
+
+
 def make_template_annotations(raw_dir: Path, out_json: Path) -> None:
     """Emit a primitive=grasp / object=block placeholder for each episode."""
     out: dict = {}
-    state_files = sorted(raw_dir.glob("episode_*[0-9].h5"))
+    state_files = _discover_state_files(raw_dir)
     for sp in state_files:
         out[sp.stem] = {
             "primitive": "grasp",
@@ -568,7 +601,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--raw_dir", type=Path, required=True,
-                        help="Directory holding episode_*.h5 + *_hand_video.hdf5 + *_third_person_video.hdf5")
+                        help="Directory holding state .h5 files alongside *_hand_video.hdf5 + *_third_person_video.hdf5 siblings")
     parser.add_argument("--save_path", type=Path, required=True,
                         help="Output root; gets {training,validation}/D+0/ann_*.dat + lang_annotations/")
     parser.add_argument("--annotations", type=Path, default=None,
@@ -603,9 +636,10 @@ def main() -> int:
                              "discarded. Replaces --annotations entirely.")
     args = parser.parse_args()
 
-    state_files = sorted(args.raw_dir.glob("episode_*[0-9].h5"))
+    state_files = _discover_state_files(args.raw_dir)
     if not state_files:
-        print(f"ERROR: no episode_*.h5 files under {args.raw_dir}")
+        print(f"ERROR: no state .h5 files with paired *_hand_video.hdf5 + "
+              f"*_third_person_video.hdf5 siblings found under {args.raw_dir}")
         return 2
 
     if args.emit_template:
