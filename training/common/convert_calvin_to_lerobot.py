@@ -92,8 +92,8 @@ class Args:
     push_to_hub: bool = False
     """Push the converted dataset to the Hugging Face Hub."""
 
-    image_writer_threads: int = 10
-    image_writer_processes: int = 5
+    image_writer_threads: int = 0
+    image_writer_processes: int = 0
 
 
 def _decode(s) -> str:
