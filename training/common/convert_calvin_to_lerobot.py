@@ -32,13 +32,25 @@ Prerequisites:
 """
 
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 from tqdm import tqdm
 
-from lerobot.common.datasets.lerobot_dataset import HF_LEROBOT_HOME, LeRobotDataset
+try:
+    # lerobot < 0.4
+    from lerobot.common.datasets.lerobot_dataset import HF_LEROBOT_HOME, LeRobotDataset
+except ImportError:
+    # lerobot >= 0.4
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    try:
+        from lerobot.datasets.lerobot_dataset import HF_LEROBOT_HOME
+    except ImportError:
+        try:
+            from lerobot.constants import HF_LEROBOT_HOME
+        except ImportError:
+            HF_LEROBOT_HOME = Path.home() / ".cache" / "huggingface" / "lerobot"
 
 
 FEATURES = {
