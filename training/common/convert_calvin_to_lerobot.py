@@ -139,8 +139,8 @@ def main(args: Args) -> None:
                 {
                     "image": npz["rgb_static"],
                     "wrist_image": npz["rgb_gripper"],
-                    "state": npz["robot_obs"],
-                    "action": npz["rel_actions"],
+                    "state": npz["robot_obs"].astype(np.float32),
+                    "action": npz["rel_actions"].astype(np.float32),
                     "task": instruction,
                 }
             )
