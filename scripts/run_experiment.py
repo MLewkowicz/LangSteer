@@ -49,6 +49,9 @@ def instantiate_policy(cfg: DictConfig) -> BasePolicy:
     if policy_name == "diffuser_actor":
         from policies.diffuser_actor import build_diffuser_actor_policy
         policy = build_diffuser_actor_policy(OmegaConf.to_container(cfg.policy, resolve=True))
+    elif policy_name == "pi05":
+        from policies.pi05 import Pi05Policy
+        policy = Pi05Policy(OmegaConf.to_container(cfg.policy, resolve=True))
     else:
         raise ValueError(f"Unknown policy: {policy_name}")
 
@@ -221,9 +224,18 @@ def main(cfg: DictConfig) -> None:
         obs = None
         use_reference_init = cfg.get('use_reference_init', False)
 
+        # scene_npz override: load starting state from an arbitrary npz with
+        # 'robot_obs'/'scene_obs' (e.g. a synthetic, hand-built scene). Takes
+        # precedence over episode_id; same starting state every episode.
+        scene_npz = cfg.get('scene_npz', None)
         # episode_id override: load a specific dataset episode as initial conditions
         episode_id_override = cfg.get('episode_id', None)
-        if episode_id_override is not None:
+        if scene_npz is not None:
+            data = np.load(str(scene_npz))
+            _ep_robot_obs = data['robot_obs'].astype(np.float32)
+            _ep_scene_obs = data['scene_obs'].astype(np.float32)
+            logger.info(f"Loading starting state from scene npz: {scene_npz}")
+        elif episode_id_override is not None:
             ep_path = Path(cfg.env.dataset_path) / cfg.env.split / f"episode_{int(episode_id_override):07d}.npz"
             data = np.load(str(ep_path))
             _ep_robot_obs = data['robot_obs'].astype(np.float32)
@@ -363,13 +375,32 @@ def main(cfg: DictConfig) -> None:
             gripper_w = viz_manager.config.video.gripper_record_width
             gripper_h = viz_manager.config.video.gripper_record_height
             static_fov = getattr(viz_manager.config.video, 'static_camera_fov', None)
+            static_ss = getattr(viz_manager.config.video, 'static_supersample', 1)
+            white_bg = getattr(viz_manager.config.video, 'white_background', False)
+            render_backend = getattr(viz_manager.config.video, 'render_backend', 'tiny')
+            depth_margin = getattr(viz_manager.config.video, 'depth_margin', None)
             use_hires_static = static_w > 0 and static_h > 0
             use_hires_gripper = gripper_w > 0 and gripper_h > 0
+
+            # Attempt the EGL hardware renderer once; downgrade to TinyRenderer on
+            # failure. Cast shadows are only effective on the hardware backend.
+            static_shadow = False
+            if render_backend == 'egl' and hasattr(env, 'try_enable_hardware_renderer'):
+                if env.try_enable_hardware_renderer():
+                    static_shadow = True
+                else:
+                    logger.warning("EGL requested but unavailable; falling back to tiny backend.")
+                    render_backend = 'tiny'
 
             def _waypoint_render(calvin_obs):
                 frames = {}
                 if use_hires_static:
-                    frames['static'] = env.render_high_res_static(static_w, static_h, fov=static_fov)
+                    frames['static'] = env.render_high_res_static(
+                        static_w, static_h, fov=static_fov,
+                        supersample=static_ss, white_background=white_bg,
+                        backend=render_backend, shadow=static_shadow,
+                        depth_margin=depth_margin,
+                    )
                 else:
                     raw = calvin_obs.get('rgb_obs', {}).get('rgb_static')
                     if raw is not None:
@@ -386,7 +417,12 @@ def main(cfg: DictConfig) -> None:
             # Capture the initial env state before any actions
             initial_frames = {}
             if use_hires_static:
-                initial_frames['static'] = env.render_high_res_static(static_w, static_h, fov=static_fov)
+                initial_frames['static'] = env.render_high_res_static(
+                    static_w, static_h, fov=static_fov,
+                    supersample=static_ss, white_background=white_bg,
+                    backend=render_backend, shadow=static_shadow,
+                    depth_margin=depth_margin,
+                )
             elif obs.rgb.get('static') is not None:
                 initial_frames['static'] = obs.rgb.get('static')
             if use_hires_gripper:

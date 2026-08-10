@@ -34,10 +34,14 @@ class Action:
     Standardized action container passed from Policy to Env.
     
     Attributes:
-        trajectory (np.ndarray): Sequence of predicted end-effector poses. 
+        trajectory (np.ndarray): Sequence of predicted end-effector poses.
                                  Shape (H, 7) or (H, 6) depending on relative/absolute.
                                  Base policies may predict a sequence, but Envs might only execute step 0.
         gripper (float): Gripper open/close state. Range [-1, 1] or [0, 1].
+        relative (bool): If True, each trajectory row is a relative delta the env dispatches
+                         as a flat (7,) CALVIN-relative action (scaled by max_rel_pos/orn),
+                         rather than an absolute target pose. Defaults to False (absolute).
     """
     trajectory: np.ndarray
     gripper: float
+    relative: bool = False

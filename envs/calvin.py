@@ -98,6 +98,11 @@ class CalvinEnvironment(BaseEnvironment):
         # _get_fixture_positions() call (needs env to be fully loaded).
         self._fixture_frame_offsets: Optional[Dict[str, np.ndarray]] = None
 
+        # Render-quality caches (lazy): floor-plane body UID for white-background
+        # compositing, and whether the EGL hardware renderer plugin is loaded.
+        self._plane_uid_cache: Optional[int] = None
+        self._egl_enabled: Optional[bool] = None
+
         logger.info(f"CalvinEnvironment initialized")
         logger.info(f"  Task: {self._task_name}")
         logger.info(f"  Instruction: {self._instruction}")
@@ -154,15 +159,24 @@ class CalvinEnvironment(BaseEnvironment):
 
     def _process_obs(self, calvin_obs: Dict) -> Observation:
         """Convert raw CALVIN observation to Observation DTO."""
+        # Native 84x84 gripper RGB (raw, un-upsampled). prepare_visual_states upsamples
+        # the gripper to 200x200 for the Diffuser Actor; pi0.5 was trained on the native
+        # resolution, so expose the raw frame under 'gripper_native'. Inert for policies
+        # that only read rgb['static']/rgb['gripper'].
+        raw_gripper = calvin_obs.get('rgb_obs', {}).get('rgb_gripper')
+
         if self._provide_pcd_images:
             from envs.calvin_utils.observation import prepare_visual_states
             cameras = self._gym_env._env.cameras
             processed = prepare_visual_states(calvin_obs, cameras)
+            rgb = {
+                'static': processed['rgb_static'],
+                'gripper': processed['rgb_gripper'],
+            }
+            if raw_gripper is not None:
+                rgb['gripper_native'] = np.asarray(raw_gripper)
             return Observation(
-                rgb={
-                    'static': processed['rgb_static'],
-                    'gripper': processed['rgb_gripper'],
-                },
+                rgb=rgb,
                 proprio=processed['robot_obs'],
                 ee_pose=processed['ee_pose'],
                 instruction=self._instruction,
@@ -174,8 +188,11 @@ class CalvinEnvironment(BaseEnvironment):
         else:
             from envs.calvin_utils.observation import process_calvin_obs
             processed = process_calvin_obs(calvin_obs, self._num_points)
+            rgb = {'static': processed['rgb_static']}
+            if raw_gripper is not None:
+                rgb['gripper_native'] = np.asarray(raw_gripper)
             return Observation(
-                rgb={'static': processed['rgb_static']},
+                rgb=rgb,
                 proprio=processed['robot_obs'],
                 ee_pose=processed['ee_pose'],
                 instruction=self._instruction,
@@ -239,10 +256,22 @@ class CalvinEnvironment(BaseEnvironment):
         done = False
         info = {}
 
+        # pi0.5 (and other relative policies) emit relative deltas; a flat (7,) array
+        # is dispatched by CALVIN's Robot.apply_action as RELATIVE, whereas a list-of-3
+        # is an ABSOLUTE target pose (the Diffuser Actor path).
+        is_relative = getattr(action, "relative", False)
+
         for act_ind in range(action.trajectory.shape[0]):
             act = action.trajectory[act_ind]
-            gripper_binary = np.array([1.0 if act[6] > 0 else -1.0])
-            calvin_action = [act[:3].copy(), act[3:6].copy(), gripper_binary]
+            gripper_binary = 1.0 if act[6] > 0 else -1.0
+            if is_relative:
+                # flat (7,): dpos scaled by max_rel_pos, d-euler by max_rel_orn, gripper +/-1
+                calvin_action = np.array(
+                    [act[0], act[1], act[2], act[3], act[4], act[5], gripper_binary],
+                    dtype=np.float32,
+                )
+            else:
+                calvin_action = [act[:3].copy(), act[3:6].copy(), np.array([gripper_binary])]
 
             calvin_obs, reward, done, info = self._gym_env.step(calvin_action)
             total_reward += reward
@@ -337,7 +366,67 @@ class CalvinEnvironment(BaseEnvironment):
         ).reshape(4, 4, order="F")
         return view_matrix, proj_matrix
 
-    def render_high_res_static(self, width: int, height: int, fov: float | None = None) -> np.ndarray:
+    def _get_plane_uid(self) -> int:
+        """Return the floor `plane` body UID (cached per env), or -2 if absent.
+
+        Used by white-background compositing. PyBullet body-UID ordering is not
+        stable, so detect by name: `getBodyInfo(uid)[1] == b"plane"`. CALVIN's
+        `reset()` does not call `resetSimulation`, so UIDs are stable across
+        resets within one env — caching once is safe. Sentinel -2 matches no
+        seg value (void is -1).
+        """
+        if self._plane_uid_cache is not None:
+            return self._plane_uid_cache
+        import pybullet as p
+        cid = self._gym_env._env.cameras[0].cid
+        plane_uid = -2
+        for i in range(p.getNumBodies(physicsClientId=cid)):
+            uid = p.getBodyUniqueId(i, physicsClientId=cid)
+            info = p.getBodyInfo(uid, physicsClientId=cid)
+            if info and info[1] == b"plane":
+                plane_uid = uid
+                break
+        self._plane_uid_cache = plane_uid
+        return plane_uid
+
+    def try_enable_hardware_renderer(self) -> bool:
+        """Load PyBullet's EGL hardware-OpenGL plugin on the existing DIRECT client.
+
+        Returns True iff the plugin loaded (handle >= 0); cached + idempotent.
+        Enables `ER_BULLET_HARDWARE_OPENGL` (MSAA + cast shadows). NOTE: a native
+        EGL segfault cannot be caught here, so callers should gate this behind an
+        out-of-process viability probe. Gating must be on the load handle — the
+        hardware renderer silently falls back to TinyRenderer (identical pixels)
+        if the plugin is not loaded, so pixel checks cannot detect it.
+        """
+        if self._egl_enabled is not None:
+            return self._egl_enabled
+        ok = False
+        try:
+            import pkgutil
+            import pybullet as p
+            egl = pkgutil.get_loader("eglRenderer")
+            if egl is not None:
+                handle = p.loadPlugin(egl.get_filename(), "_eglRendererPlugin")
+                ok = handle >= 0
+        except Exception as e:  # pragma: no cover - environment dependent
+            logger.warning(f"EGL plugin load failed: {e}")
+            ok = False
+        self._egl_enabled = ok
+        logger.info(f"Hardware (EGL) renderer enabled: {ok}")
+        return ok
+
+    def render_high_res_static(
+        self,
+        width: int,
+        height: int,
+        fov: float | None = None,
+        supersample: int = 1,
+        white_background: bool = False,
+        backend: str = "tiny",
+        shadow: bool = False,
+        depth_margin: float | None = None,
+    ) -> np.ndarray:
         """
         Render the static overhead camera at an arbitrary resolution using PyBullet directly.
 
@@ -347,6 +436,21 @@ class CalvinEnvironment(BaseEnvironment):
             width: Desired output width in pixels.
             height: Desired output height in pixels.
             fov: Optional field of view override in degrees. If None, uses the camera's native FOV.
+            supersample: SSAA factor. Renders at (width*ss, height*ss) and
+                downscales to (width, height) with INTER_AREA for anti-aliasing.
+            white_background: If True, composite white over floor-plane + void
+                (seg == -1) pixels at the supersampled resolution before downscale,
+                so object silhouettes anti-alias against white.
+            backend: "tiny" (software rasterizer + SSAA) or "egl" (hardware
+                OpenGL renderer; requires try_enable_hardware_renderer() first).
+            shadow: Enable cast shadows (only effective with backend="egl").
+            depth_margin: If set, tighten the projection near/far planes to
+                [cam_dist - margin, cam_dist + margin] (cam_dist = camera→target
+                distance) instead of the camera's wide native 0.01..10. The wide
+                range gives terrible perspective-depth precision at the ~4m table
+                distance, which makes the table z-fight *through* the blocks
+                (triangular notch artifacts) — only visible at high resolution.
+                Tightening the range fixes it. `None` = legacy native planes.
 
         Returns:
             (height, width, 3) uint8 RGB array.
@@ -354,15 +458,37 @@ class CalvinEnvironment(BaseEnvironment):
         import pybullet as p
         cam = self._gym_env._env.cameras[0]
         effective_fov = fov if fov is not None else cam.fov
+        ss = max(1, int(supersample))
+        rw, rh = width * ss, height * ss
+        near, far = cam.nearval, cam.farval
+        if depth_margin is not None and hasattr(cam, "look_from") and hasattr(cam, "look_at"):
+            d = float(np.linalg.norm(np.array(cam.look_from) - np.array(cam.look_at)))
+            near = max(0.05, d - depth_margin)
+            far = d + depth_margin
         proj_matrix = p.computeProjectionMatrixFOV(
-            effective_fov, width / height, cam.nearval, cam.farval,
+            effective_fov, rw / rh, near, far,
             physicsClientId=cam.cid
         )
-        _, _, rgba, _, _ = p.getCameraImage(
-            width, height, cam.viewMatrix, proj_matrix,
-            physicsClientId=cam.cid
+        kwargs: Dict[str, Any] = dict(physicsClientId=cam.cid)
+        if backend == "egl":
+            kwargs["renderer"] = p.ER_BULLET_HARDWARE_OPENGL
+            kwargs["shadow"] = 1 if shadow else 0
+        _, _, rgba, _, seg = p.getCameraImage(
+            rw, rh, cam.viewMatrix, proj_matrix, **kwargs
         )
-        return np.array(rgba, dtype=np.uint8)[:, :, :3]
+        rgb = np.array(rgba, dtype=np.uint8).reshape(rh, rw, 4)[:, :, :3]
+
+        if white_background:
+            seg_arr = np.array(seg, dtype=np.int32).reshape(rh, rw)
+            plane_uid = self._get_plane_uid()
+            bg = (seg_arr == -1) | (seg_arr == plane_uid)
+            rgb = rgb.copy()
+            rgb[bg] = 255
+
+        if ss > 1:
+            import cv2
+            rgb = cv2.resize(rgb, (width, height), interpolation=cv2.INTER_AREA)
+        return np.ascontiguousarray(rgb)
 
     # ------------------------------------------------------------------
     # Scene state (for VoxPoser steering)

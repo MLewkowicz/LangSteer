@@ -1,0 +1,27 @@
+# pi0.5 (OpenPI) baseline — thin websocket client to a remote/local policy server.
+# The JAX model runs in a separate OpenPI process (see serve_pi05.py). This config
+# only carries connection + receding-horizon settings.
+
+name: pi05
+
+# Weights live on the server; keep null so instantiate_policy() does NOT call
+# load_checkpoint (the websocket connection is made in Pi05Policy.__init__).
+ckpt_path: null
+device: "cuda"   # informational only; the client does no GPU work
+
+# OpenPI websocket policy server location. Use 127.0.0.1 with an ssh -L tunnel,
+# or the server box IP when co-located on one workstation.
+host: "127.0.0.1"
+port: 8000
+
+# pi0.5 predicts action_horizon=10 relative steps; execute the first replan_steps,
+# then re-infer with fresh observations (receding horizon).
+action_horizon: 10
+replan_steps: 5
+
+# Observation.rgb keys the client reads for the two policy cameras.
+static_key: "static"
+gripper_key: "gripper_native"
+
+# Optional fixed prompt (null => use the CALVIN annotation from the env).
+prompt: null
