@@ -1,0 +1,21 @@
+# Control: lift task with same config as the rot diagnostics.
+# Establishes whether the grasp policy works at all under this checkpoint
+# + steering config. If lift succeeds while rotate fails, the issue is
+# rotate-specific (probably the rotate primitive's training, not grasp).
+condition_name: "ROT-DIAG control: lift_red_block_table"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/rot_diag_cache
+  guidance_strength_rot: 1.0
+
+tasks:
+  - lift_red_block_table

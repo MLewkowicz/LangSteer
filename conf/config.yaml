@@ -22,6 +22,7 @@ instruction: null
 # Experiment options
 use_reference_init: false  # Use reference trajectory initial conditions even without steering (for fair comparison)
 episode_id: null           # Load a specific dataset episode as starting conditions (e.g. episode_id=34246)
+scene_npz: null            # Load starting state from an arbitrary npz with robot_obs/scene_obs (overrides episode_id)
 num_episodes: 10           # Number of episodes to evaluate
 max_steps: 1000            # Maximum steps per episode
 log_trajectory: false      # Save trajectory data to disk

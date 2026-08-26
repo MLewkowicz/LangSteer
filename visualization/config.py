@@ -63,6 +63,12 @@ class VideoConfig:
     # Optional FOV override for static camera re-renders (degrees).
     # `None` = use CALVIN's native FOV.
     static_camera_fov: Optional[float] = None
+    # Anti-aliasing / background controls for the static re-render
+    # (do NOT affect policy inputs). Defaults preserve legacy behavior.
+    static_supersample: int = 1          # SSAA: render at ss× then INTER_AREA downscale
+    white_background: bool = False       # composite white over floor-plane + void pixels
+    render_backend: str = "tiny"         # "tiny" (software+SSAA) | "egl" (hardware MSAA+shadows)
+    depth_margin: Optional[float] = None  # tighten near/far to cam_dist±margin (fixes z-fight); None=native
 
 
 @dataclass

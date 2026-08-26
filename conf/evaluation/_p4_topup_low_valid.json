@@ -1,0 +1,7 @@
+{
+  "tasks": [
+    "push_red_block_right",
+    "lift_pink_block_table",
+    "rotate_red_block_right"
+  ]
+}

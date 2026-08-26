@@ -1,0 +1,15 @@
+# Same as _rot_diag_off but only rotate_red_block_left. Used with
+# --tries-per-episode N to sample diffusion noise and measure the
+# distribution of committed EE rotation directions.
+condition_name: "ROT-DIAG left-only rot_strength=0"
+policy_config: diffuser_actor_primitive_object
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+steering: voxposer
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/rot_diag_cache
+  guidance_strength_rot: 0
+tasks:
+  - rotate_red_block_left

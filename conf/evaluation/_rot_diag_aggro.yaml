@@ -1,0 +1,25 @@
+# Aggressive rotation steering, with hemisphere fix disabled. Tests whether
+# the SLERP short-way-relative-to-prediction was locking the policy onto its
+# directional bias (the "EE takes the long way around for opposite-sign
+# targets" observation). See ~/.claude/plans/there-is-an-issue-keen-floyd.md
+# (committed next experiment).
+condition_name: "ROT-DIAG aggressive (rot=5, alpha_max=1.0, floor=0.2, hemi=off)"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/rot_diag_cache
+  guidance_strength_rot: 5.0
+  rot_horizon_alpha_max: 1.0
+  rot_horizon_floor: 0.2
+  rot_hemisphere_fix: false
+
+tasks:
+  - rotate_red_block_left

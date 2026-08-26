@@ -1,0 +1,25 @@
+# Task 7 Phase 3 iter 2 canary — A+B refinements applied.
+# Composer preamble now includes precision rule on ambiguous_resolutions;
+# cavity-lift example swapped for place_in_slider. Fresh cache.
+
+condition_name: "Task7 Phase 3 iter 2 (precision rule + place_in_slider example)"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/task7_phase3_iter2_cache
+  scene_grounding.enabled: true
+
+tasks:
+  - stack_block
+  - push_into_drawer
+  - lift_blue_block_slider
+  - lift_red_block_drawer
+  - place_in_slider

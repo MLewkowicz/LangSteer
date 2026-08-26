@@ -1,0 +1,22 @@
+# Diagnostic eval: rotation guidance ON (guidance_strength_rot = position
+# strength). Tests Finding 0: does enabling rotation steering recover
+# the rotation success rate? See ~/.claude/plans/there-is-an-issue-keen-
+# floyd.md.
+condition_name: "ROT-DIAG rot_strength=1.0"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/rot_diag_cache
+  guidance_strength_rot: 1.0
+
+tasks:
+  - rotate_red_block_left
+  - rotate_red_block_right

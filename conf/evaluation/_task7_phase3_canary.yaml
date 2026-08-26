@@ -1,0 +1,24 @@
+# Task 7 Phase 3 canary — 5 task families × 3 ep = 15 ep.
+# scene_grounding ON. Fresh cache (composer + affordance prompts changed).
+
+condition_name: "Task7 Phase 3 (scene-grounding wired into composer + affordance)"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/task7_phase3_canary_cache
+  scene_grounding.enabled: true
+
+tasks:
+  - stack_block
+  - push_into_drawer
+  - lift_blue_block_slider
+  - lift_red_block_drawer
+  - place_in_slider

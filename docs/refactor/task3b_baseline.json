@@ -1,0 +1,713 @@
+{
+  "_help": "Phase 0 audit baseline for Task 3b. Generated 2026-05-18 on gpt-5.4-mini.",
+  "meta": {
+    "llm_model": "gpt-5.4-mini",
+    "llm_temperature": 0,
+    "cache_dir": "/tmp/task3b_audit_cache_gpt5_4_mini",
+    "eval_max_steps": 120,
+    "eval_episodes_per_task": 5,
+    "branch": "refactoring",
+    "previous_baseline": "3a iter-5 on gpt-4o: 78/140 = 55.7%"
+  },
+  "audit_components": {
+    "composer_perturbation": "see docs/refactor/task3b_composer_perturbation.json (140 audits across canonical+P1-P4)",
+    "value_map_state": "see docs/refactor/task3b_value_map_state.json (7 tasks, 14 stages inspected)",
+    "loop_back_repro": "extracted from baseline run log; see loop_back_classification below",
+    "leakage_grep": {
+      "pass": true,
+      "hits_in_voxposer_steering_policies": 0
+    }
+  },
+  "overall_pass_rate": {
+    "successes": 73,
+    "attempted": 140,
+    "rate": "73/140 = 52.1%",
+    "vs_3a_iter5": "78/140 = 55.7% \u2192 73/140 = 52.1% (-3.6pp, gpt-5.4-mini regression)"
+  },
+  "per_task_eval": {
+    "push_red_block_right": {
+      "success": 3,
+      "attempted": 5
+    },
+    "push_red_block_left": {
+      "success": 3,
+      "attempted": 5
+    },
+    "push_blue_block_right": {
+      "success": 0,
+      "attempted": 5
+    },
+    "push_blue_block_left": {
+      "success": 2,
+      "attempted": 5
+    },
+    "push_pink_block_right": {
+      "success": 4,
+      "attempted": 5
+    },
+    "push_pink_block_left": {
+      "success": 4,
+      "attempted": 5
+    },
+    "move_slider_left": {
+      "success": 3,
+      "attempted": 5
+    },
+    "move_slider_right": {
+      "success": 3,
+      "attempted": 5
+    },
+    "open_drawer": {
+      "success": 5,
+      "attempted": 5
+    },
+    "close_drawer": {
+      "success": 3,
+      "attempted": 5
+    },
+    "lift_red_block_table": {
+      "success": 2,
+      "attempted": 5
+    },
+    "lift_blue_block_table": {
+      "success": 2,
+      "attempted": 5
+    },
+    "lift_pink_block_table": {
+      "success": 3,
+      "attempted": 5
+    },
+    "lift_red_block_slider": {
+      "success": 2,
+      "attempted": 5
+    },
+    "lift_blue_block_slider": {
+      "success": 5,
+      "attempted": 5
+    },
+    "lift_pink_block_slider": {
+      "success": 3,
+      "attempted": 5
+    },
+    "lift_red_block_drawer": {
+      "success": 4,
+      "attempted": 5
+    },
+    "lift_blue_block_drawer": {
+      "success": 2,
+      "attempted": 5
+    },
+    "lift_pink_block_drawer": {
+      "success": 4,
+      "attempted": 5
+    },
+    "place_in_slider": {
+      "success": 0,
+      "attempted": 5
+    },
+    "place_in_drawer": {
+      "success": 4,
+      "attempted": 5
+    },
+    "push_into_drawer": {
+      "success": 0,
+      "attempted": 5
+    },
+    "stack_block": {
+      "success": 0,
+      "attempted": 5
+    },
+    "unstack_block": {
+      "success": 1,
+      "attempted": 5
+    },
+    "turn_on_lightbulb": {
+      "success": 1,
+      "attempted": 5
+    },
+    "turn_off_lightbulb": {
+      "success": 0,
+      "attempted": 5
+    },
+    "turn_on_led": {
+      "success": 5,
+      "attempted": 5
+    },
+    "turn_off_led": {
+      "success": 5,
+      "attempted": 5
+    }
+  },
+  "per_task_vs_3a_iter5": {
+    "push_red_block_right": {
+      "iter5_3a": 3,
+      "iter0_3b": 3,
+      "delta": 0
+    },
+    "push_red_block_left": {
+      "iter5_3a": 3,
+      "iter0_3b": 3,
+      "delta": 0
+    },
+    "push_blue_block_right": {
+      "iter5_3a": 0,
+      "iter0_3b": 0,
+      "delta": 0
+    },
+    "push_blue_block_left": {
+      "iter5_3a": 2,
+      "iter0_3b": 2,
+      "delta": 0
+    },
+    "push_pink_block_right": {
+      "iter5_3a": 4,
+      "iter0_3b": 4,
+      "delta": 0
+    },
+    "push_pink_block_left": {
+      "iter5_3a": 4,
+      "iter0_3b": 4,
+      "delta": 0
+    },
+    "move_slider_left": {
+      "iter5_3a": 3,
+      "iter0_3b": 3,
+      "delta": 0
+    },
+    "move_slider_right": {
+      "iter5_3a": 3,
+      "iter0_3b": 3,
+      "delta": 0
+    },
+    "open_drawer": {
+      "iter5_3a": 5,
+      "iter0_3b": 5,
+      "delta": 0
+    },
+    "close_drawer": {
+      "iter5_3a": 2,
+      "iter0_3b": 3,
+      "delta": 1
+    },
+    "lift_red_block_table": {
+      "iter5_3a": 2,
+      "iter0_3b": 2,
+      "delta": 0
+    },
+    "lift_blue_block_table": {
+      "iter5_3a": 1,
+      "iter0_3b": 2,
+      "delta": 1
+    },
+    "lift_pink_block_table": {
+      "iter5_3a": 3,
+      "iter0_3b": 3,
+      "delta": 0
+    },
+    "lift_red_block_slider": {
+      "iter5_3a": 1,
+      "iter0_3b": 2,
+      "delta": 1
+    },
+    "lift_blue_block_slider": {
+      "iter5_3a": 2,
+      "iter0_3b": 5,
+      "delta": 3
+    },
+    "lift_pink_block_slider": {
+      "iter5_3a": 3,
+      "iter0_3b": 3,
+      "delta": 0
+    },
+    "lift_red_block_drawer": {
+      "iter5_3a": 3,
+      "iter0_3b": 4,
+      "delta": 1
+    },
+    "lift_blue_block_drawer": {
+      "iter5_3a": 2,
+      "iter0_3b": 2,
+      "delta": 0
+    },
+    "lift_pink_block_drawer": {
+      "iter5_3a": 5,
+      "iter0_3b": 4,
+      "delta": -1
+    },
+    "place_in_slider": {
+      "iter5_3a": 0,
+      "iter0_3b": 0,
+      "delta": 0
+    },
+    "place_in_drawer": {
+      "iter5_3a": 4,
+      "iter0_3b": 4,
+      "delta": 0
+    },
+    "push_into_drawer": {
+      "iter5_3a": 1,
+      "iter0_3b": 0,
+      "delta": -1
+    },
+    "stack_block": {
+      "iter5_3a": 0,
+      "iter0_3b": 0,
+      "delta": 0
+    },
+    "unstack_block": {
+      "iter5_3a": 4,
+      "iter0_3b": 1,
+      "delta": -3
+    },
+    "turn_on_lightbulb": {
+      "iter5_3a": 5,
+      "iter0_3b": 1,
+      "delta": -4
+    },
+    "turn_off_lightbulb": {
+      "iter5_3a": 3,
+      "iter0_3b": 0,
+      "delta": -3
+    },
+    "turn_on_led": {
+      "iter5_3a": 5,
+      "iter0_3b": 5,
+      "delta": 0
+    },
+    "turn_off_led": {
+      "iter5_3a": 5,
+      "iter0_3b": 5,
+      "delta": 0
+    }
+  },
+  "loop_back_classification": {
+    "push_red_block_right": {
+      "peaks": [
+        0,
+        1,
+        0,
+        0,
+        1
+      ],
+      "avg_peak": 0.4,
+      "max_peak": 1,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "push_red_block_left": {
+      "peaks": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "avg_peak": 0.2,
+      "max_peak": 1,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "push_blue_block_right": {
+      "peaks": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.2,
+      "max_peak": 1,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "push_blue_block_left": {
+      "peaks": [
+        2,
+        2,
+        1,
+        0,
+        3
+      ],
+      "avg_peak": 1.6,
+      "max_peak": 3,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "push_pink_block_right": {
+      "peaks": [
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.2,
+      "max_peak": 1,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "push_pink_block_left": {
+      "peaks": [
+        3,
+        0,
+        0,
+        1,
+        1
+      ],
+      "avg_peak": 1.0,
+      "max_peak": 3,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "move_slider_left": {
+      "peaks": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "avg_peak": 0.2,
+      "max_peak": 1,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "move_slider_right": {
+      "peaks": [
+        2,
+        0,
+        0,
+        0,
+        3
+      ],
+      "avg_peak": 1.0,
+      "max_peak": 3,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "open_drawer": {
+      "peaks": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "avg_peak": 0.2,
+      "max_peak": 1,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "close_drawer": {
+      "peaks": [
+        2,
+        0,
+        0,
+        0,
+        1
+      ],
+      "avg_peak": 0.6,
+      "max_peak": 2,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "lift_red_block_table": {
+      "peaks": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.0,
+      "max_peak": 0,
+      "avg_guards": 5.6,
+      "total_loop_fires": 0,
+      "classification": "loop_back_excluded"
+    },
+    "lift_blue_block_table": {
+      "peaks": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "avg_peak": 0.2,
+      "max_peak": 1,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "lift_pink_block_table": {
+      "peaks": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.0,
+      "max_peak": 0,
+      "avg_guards": 5.6,
+      "total_loop_fires": 0,
+      "classification": "loop_back_excluded"
+    },
+    "lift_red_block_slider": {
+      "peaks": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.0,
+      "max_peak": 0,
+      "avg_guards": 5.6,
+      "total_loop_fires": 0,
+      "classification": "loop_back_excluded"
+    },
+    "lift_blue_block_slider": {
+      "peaks": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.0,
+      "max_peak": 0,
+      "avg_guards": 4.8,
+      "total_loop_fires": 0,
+      "classification": "policy_never_in_basin"
+    },
+    "lift_pink_block_slider": {
+      "peaks": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.0,
+      "max_peak": 0,
+      "avg_guards": 5.6,
+      "total_loop_fires": 0,
+      "classification": "loop_back_excluded"
+    },
+    "lift_red_block_drawer": {
+      "peaks": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.0,
+      "max_peak": 0,
+      "avg_guards": 5.4,
+      "total_loop_fires": 0,
+      "classification": "loop_back_excluded"
+    },
+    "lift_blue_block_drawer": {
+      "peaks": [
+        3,
+        0,
+        1,
+        0,
+        0
+      ],
+      "avg_peak": 0.8,
+      "max_peak": 3,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "lift_pink_block_drawer": {
+      "peaks": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.0,
+      "max_peak": 0,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "policy_never_in_basin"
+    },
+    "place_in_slider": {
+      "peaks": [
+        3,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.6,
+      "max_peak": 3,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "place_in_drawer": {
+      "peaks": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.0,
+      "max_peak": 0,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "policy_never_in_basin"
+    },
+    "push_into_drawer": {
+      "peaks": [
+        0,
+        1,
+        1,
+        0,
+        0
+      ],
+      "avg_peak": 0.4,
+      "max_peak": 1,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "stack_block": {
+      "peaks": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.0,
+      "max_peak": 0,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "policy_never_in_basin"
+    },
+    "unstack_block": {
+      "peaks": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.0,
+      "max_peak": 0,
+      "avg_guards": 5.0,
+      "total_loop_fires": 0,
+      "classification": "policy_never_in_basin"
+    },
+    "turn_on_lightbulb": {
+      "peaks": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.2,
+      "max_peak": 1,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "turn_off_lightbulb": {
+      "peaks": [
+        0,
+        1,
+        3,
+        1,
+        1
+      ],
+      "avg_peak": 1.2,
+      "max_peak": 3,
+      "avg_guards": 0.0,
+      "total_loop_fires": 0,
+      "classification": "dwell_not_met_wiggle_reset"
+    },
+    "turn_on_led": {
+      "peaks": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.0,
+      "max_peak": 0,
+      "avg_guards": 2.2,
+      "total_loop_fires": 0,
+      "classification": "policy_never_in_basin"
+    },
+    "turn_off_led": {
+      "peaks": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "avg_peak": 0.0,
+      "max_peak": 0,
+      "avg_guards": 1.4,
+      "total_loop_fires": 0,
+      "classification": "policy_never_in_basin"
+    }
+  },
+  "loop_back_dominant_cause": {
+    "dwell_not_met_wiggle_reset": 16,
+    "loop_back_excluded": 5,
+    "policy_never_in_basin": 7
+  },
+  "phase0_summary": {
+    "composer_perturbation": {
+      "P1_P2_P3_invalid_after_retries": 0,
+      "P4_invalid_after_retries": 0,
+      "P1_P2_P3_wrong_object": 0,
+      "P4_wrong_object": 12,
+      "strategy_unified_cases": 9,
+      "conclusion": "Vocab linter holds on gpt-5.4-mini across all 140 audits. The 9 'wrong_primitive' cases are STRATEGY_UNIFIED (3a iter-2 grasp+place locking) \u2014 annotation-GT diff is by design. P4 wrong_object cases are all scene-info-dependent (Task #7 territory)."
+    },
+    "loop_back_repro": {
+      "loop_back_enabled_at_runtime": true,
+      "total_episodes": 140,
+      "total_loop_back_fires": 0,
+      "peak_basin_counter_max_across_all_episodes": 0,
+      "dwell_threshold": 15,
+      "primary_hypothesis_confirmed": "(a) wiggle_reset",
+      "primary_evidence": "121 _maybe_loop_back calls across multi-stage tasks. Max basin counter reached anywhere is 3 (dwell_threshold=15). Counter resets to 0 on radius-exit before reaching threshold.",
+      "secondary_hypothesis_confirmed": "(c) loop_back_excluded for 7 single-stage tasks",
+      "secondary_evidence": "206 guard_block fires across 7 tasks where gpt-5.4-mini composer emits 1-stage (lift_*, unstack_block). Plan-\u00a73.1 candidate fix (a) addresses primary; composer prompt fix for 2-stage lifts addresses secondary."
+    },
+    "value_map_state": {
+      "centroid_collapse_rate": "11/14 = 78.6%",
+      "filled_region_stages": 0,
+      "cavity_target_tasks": [
+        "place_in_slider",
+        "push_into_drawer",
+        "place_in_drawer"
+      ],
+      "note": "place_in_drawer at 80% has cavity-target similar to place_in_slider at 0% \u2014 80% margin is loose-bbox-compliant luck, not fundamentally correct placement."
+    }
+  }
+}

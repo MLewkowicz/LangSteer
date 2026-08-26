@@ -1,0 +1,24 @@
+# P1 strength sweep — guidance_strength=0.6 on the 4 VLM-on tasks.
+# Run alongside _p1_strength_07 / _p1_strength_08 for a quick A/B/C; shared
+# cache_dir because LLM emissions don't depend on guidance_strength.
+condition_name: "P1 strength=0.6 (4 tasks, VLM on)"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/p1_strength_sweep_cache
+  scene_grounding.enabled: true
+  guidance_strength: 0.6
+
+tasks:
+  - place_in_slider
+  - place_in_drawer
+  - push_into_drawer
+  - stack_block

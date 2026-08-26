@@ -1,0 +1,929 @@
+{
+  "meta": {
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o",
+    "cache_dir": "/tmp/task3_iter1_cache"
+  },
+  "per_task_composer_emissions": [
+    {
+      "task": "push_red_block_right",
+      "instruction": "slide the red block to the right",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b6328fd4940>, None, 'static', 'push', 'red_block'), (<function ret_val at 0x7b6328fa7760>, None, 'static', 'push', 'red_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b6328fd4940>, None, 'static', 'push', 'red_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "red_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b6328fa7760>, None, 'static', 'push', 'red_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "red_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "push_red_block_left",
+      "instruction": "go slide the red block to the left",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63284f6710>, None, 'static', 'push', 'red_block'), (<function ret_val at 0x7b63284f6950>, None, 'static', 'push', 'red_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63284f6710>, None, 'static', 'push', 'red_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "red_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63284f6950>, None, 'static', 'push', 'red_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "red_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "push_blue_block_right",
+      "instruction": "push right the blue block",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63284f6d40>, None, 'static', 'push', 'blue_block'), (<function ret_val at 0x7b63284f6e60>, None, 'static', 'push', 'blue_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63284f6d40>, None, 'static', 'push', 'blue_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "blue_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63284f6e60>, None, 'static', 'push', 'blue_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "blue_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "push_blue_block_left",
+      "instruction": "push left the blue block",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63284f7250>, None, 'static', 'push', 'blue_block'), (<function ret_val at 0x7b63284f7370>, None, 'static', 'push', 'blue_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63284f7250>, None, 'static', 'push', 'blue_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "blue_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63284f7370>, None, 'static', 'push', 'blue_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "blue_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "push_pink_block_right",
+      "instruction": "push right the pink block",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63284f7760>, None, 'static', 'push', 'pink_block'), (<function ret_val at 0x7b63284f7880>, None, 'static', 'push', 'pink_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63284f7760>, None, 'static', 'push', 'pink_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "pink_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63284f7880>, None, 'static', 'push', 'pink_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "pink_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "push_pink_block_left",
+      "instruction": "go push the pink block to the left",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63284f7c70>, None, 'static', 'push', 'pink_block'), (<function ret_val at 0x7b63284f7d90>, None, 'static', 'push', 'pink_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63284f7c70>, None, 'static', 'push', 'pink_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "pink_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63284f7d90>, None, 'static', 'push', 'pink_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "pink_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "move_slider_left",
+      "instruction": "slide the door to the left",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283845e0>, None, 'static', 'push', 'slider_handle'), (<function ret_val at 0x7b6328384700>, None, 'static', 'push', 'slider_handle')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283845e0>, None, 'static', 'push', 'slider_handle')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "slider_handle",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b6328384700>, None, 'static', 'push', 'slider_handle')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "slider_handle",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "move_slider_right",
+      "instruction": "move the door all the way to the right",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283849d0>, None, 'static', 'push', 'slider_handle'), (<function ret_val at 0x7b6328384af0>, None, 'static', 'push', 'slider_handle')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283849d0>, None, 'static', 'push', 'slider_handle')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "slider_handle",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b6328384af0>, None, 'static', 'push', 'slider_handle')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "slider_handle",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "open_drawer",
+      "instruction": "pull the handle of the drawer",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b6328384dc0>, None, 'track', 'grasp', 'drawer_handle'), (<function ret_val at 0x7b6328384ee0>, None, 'static', 'pull', 'drawer_handle')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b6328384dc0>, None, 'track', 'grasp', 'drawer_handle')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "drawer_handle",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b6328384ee0>, None, 'static', 'pull', 'drawer_handle')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "pull",
+          "object": "drawer_handle",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "close_drawer",
+      "instruction": "close the cabinet drawer",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283851b0>, None, 'static', 'push', 'drawer_handle'), (<function ret_val at 0x7b63283852d0>, None, 'static', 'push', 'drawer_handle')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283851b0>, None, 'static', 'push', 'drawer_handle')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "drawer_handle",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63283852d0>, None, 'static', 'push', 'drawer_handle')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "drawer_handle",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "lift_red_block_table",
+      "instruction": "pick up the red block from the table",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283855a0>, None, 'track', 'grasp', 'red_block'), (<function ret_val at 0x7b63283856c0>, None, 'static', 'grasp', 'red_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283855a0>, None, 'track', 'grasp', 'red_block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "red_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63283856c0>, None, 'static', 'grasp', 'red_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "grasp",
+          "object": "red_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "lift_blue_block_table",
+      "instruction": "grasp the blue block, then lift it up",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b6328385ab0>, None, 'track', 'grasp', 'blue_block'), (<function ret_val at 0x7b6328385bd0>, None, 'static', 'grasp', 'blue_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b6328385ab0>, None, 'track', 'grasp', 'blue_block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "blue_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b6328385bd0>, None, 'static', 'grasp', 'blue_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "grasp",
+          "object": "blue_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "lift_pink_block_table",
+      "instruction": "pick up the pink block",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b6328385fc0>, None, 'track', 'grasp', 'pink_block'), (<function ret_val at 0x7b63283860e0>, None, 'static', 'grasp', 'pink_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b6328385fc0>, None, 'track', 'grasp', 'pink_block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "pink_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63283860e0>, None, 'static', 'grasp', 'pink_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "grasp",
+          "object": "pink_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "lift_red_block_slider",
+      "instruction": "in the slider pick up the red block",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283864d0>, None, 'track', 'grasp', 'red_block'), (<function ret_val at 0x7b63283865f0>, None, 'static', 'grasp', 'red_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283864d0>, None, 'track', 'grasp', 'red_block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "red_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63283865f0>, None, 'static', 'grasp', 'red_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "grasp",
+          "object": "red_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "lift_blue_block_slider",
+      "instruction": "in the slider pick up the blue block",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283869e0>, None, 'track', 'grasp', 'blue_block'), (<function ret_val at 0x7b6328386b00>, None, 'static', 'grasp', 'blue_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283869e0>, None, 'track', 'grasp', 'blue_block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "blue_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b6328386b00>, None, 'static', 'grasp', 'blue_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "grasp",
+          "object": "blue_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "lift_pink_block_slider",
+      "instruction": "grasp the pink block lying in the cabinet",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b6328386ef0>, None, 'track', 'grasp', 'pink_block'), (<function ret_val at 0x7b6328387010>, None, 'static', 'grasp', 'pink_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b6328386ef0>, None, 'track', 'grasp', 'pink_block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "pink_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b6328387010>, None, 'static', 'grasp', 'pink_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "grasp",
+          "object": "pink_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "lift_red_block_drawer",
+      "instruction": "go towards the red block in the drawer and grasp it",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b6328387400>, None, 'track', 'grasp', 'red_block'), (<function ret_val at 0x7b6328387520>, None, 'static', 'grasp', 'red_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b6328387400>, None, 'track', 'grasp', 'red_block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "red_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b6328387520>, None, 'static', 'grasp', 'red_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "grasp",
+          "object": "red_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "lift_blue_block_drawer",
+      "instruction": "lift the blue block lying in the drawer",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b6328387910>, None, 'track', 'grasp', 'blue_block'), (<function ret_val at 0x7b6328387a30>, None, 'static', 'grasp', 'blue_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b6328387910>, None, 'track', 'grasp', 'blue_block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "blue_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b6328387a30>, None, 'static', 'grasp', 'blue_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "grasp",
+          "object": "blue_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "lift_pink_block_drawer",
+      "instruction": "lift the pink block lying in the drawer",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b6328387e20>, None, 'track', 'grasp', 'pink_block'), (<function ret_val at 0x7b6328387f40>, None, 'static', 'grasp', 'pink_block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b6328387e20>, None, 'track', 'grasp', 'pink_block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "pink_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b6328387f40>, None, 'static', 'grasp', 'pink_block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "grasp",
+          "object": "pink_block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "place_in_slider",
+      "instruction": "put the object in the sliding cabinet",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283c03a0>, None, 'track', 'grasp', 'block'), (<function ret_val at 0x7b63283c04c0>, None, 'static', 'place', 'block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283c03a0>, None, 'track', 'grasp', 'block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63283c04c0>, None, 'static', 'place', 'block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "place",
+          "object": "block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "place_in_drawer",
+      "instruction": "store the object in the drawer",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283c08b0>, None, 'track', 'grasp', 'block'), (<function ret_val at 0x7b63283c09d0>, None, 'static', 'place', 'block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283c08b0>, None, 'track', 'grasp', 'block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63283c09d0>, None, 'static', 'place', 'block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "place",
+          "object": "block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "push_into_drawer",
+      "instruction": "sweep the block into the drawer",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283c0dc0>, None, 'track', 'grasp', 'block'), (<function ret_val at 0x7b63283c0ee0>, None, 'static', 'place', 'block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283c0dc0>, None, 'track', 'grasp', 'block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63283c0ee0>, None, 'static', 'place', 'block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "place",
+          "object": "block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "stack_block",
+      "instruction": "stack blocks on top of each other",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283c12d0>, None, 'track', 'grasp', 'block'), (<function ret_val at 0x7b63283c13f0>, None, 'static', 'place', 'block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283c12d0>, None, 'track', 'grasp', 'block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63283c13f0>, None, 'static', 'place', 'block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "place",
+          "object": "block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "unstack_block",
+      "instruction": "take off the block that is on top of the other one",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283c17e0>, None, 'track', 'grasp', 'block'), (<function ret_val at 0x7b63283c1900>, None, 'static', 'place', 'block')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283c17e0>, None, 'track', 'grasp', 'block')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "grasp",
+          "object": "block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63283c1900>, None, 'static', 'place', 'block')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "place",
+          "object": "block",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "turn_on_lightbulb",
+      "instruction": "move the light switch to turn on the yellow light",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283c1cf0>, None, 'static', 'push', 'lightbulb_switch'), (<function ret_val at 0x7b63283c1e10>, None, 'static', 'push', 'lightbulb_switch')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283c1cf0>, None, 'static', 'push', 'lightbulb_switch')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "lightbulb_switch",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63283c1e10>, None, 'static', 'push', 'lightbulb_switch')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "lightbulb_switch",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "turn_off_lightbulb",
+      "instruction": "toggle the light switch to turn off the yellow light",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283c20e0>, None, 'static', 'push', 'lightbulb_switch'), (<function ret_val at 0x7b63283c2200>, None, 'static', 'push', 'lightbulb_switch')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283c20e0>, None, 'static', 'push', 'lightbulb_switch')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "lightbulb_switch",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63283c2200>, None, 'static', 'push', 'lightbulb_switch')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "lightbulb_switch",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "turn_on_led",
+      "instruction": "turn on the green light",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283c24d0>, None, 'static', 'push', 'lightbulb_switch'), (<function ret_val at 0x7b63283c25f0>, None, 'static', 'push', 'lightbulb_switch')]",
+      "num_stages_raw": 2,
+      "num_stages_kept": 2,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283c24d0>, None, 'static', 'push', 'lightbulb_switch')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "lightbulb_switch",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        },
+        {
+          "idx": 1,
+          "raw_repr": "(<function ret_val at 0x7b63283c25f0>, None, 'static', 'push', 'lightbulb_switch')",
+          "len": 5,
+          "mode": "static",
+          "primitive": "push",
+          "object": "lightbulb_switch",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    },
+    {
+      "task": "turn_off_led",
+      "instruction": "push down the button to turn off the green light",
+      "composer_error": null,
+      "raw_output_repr": "[(<function ret_val at 0x7b63283c2950>, None, 'track', 'push', 'led_button')]",
+      "num_stages_raw": 1,
+      "num_stages_kept": 1,
+      "stages": [
+        {
+          "idx": 0,
+          "raw_repr": "(<function ret_val at 0x7b63283c2950>, None, 'track', 'push', 'led_button')",
+          "len": 5,
+          "mode": "track",
+          "primitive": "push",
+          "object": "led_button",
+          "has_rot_target": false,
+          "dropped": false,
+          "dropped_reason": null
+        }
+      ],
+      "used_linter": true
+    }
+  ],
+  "summary": {
+    "tasks_total": 28,
+    "tasks_with_composer_errors": 0,
+    "tasks_with_dropped_stages": 0,
+    "stages_total": 55,
+    "stages_dropped": 0
+  }
+}

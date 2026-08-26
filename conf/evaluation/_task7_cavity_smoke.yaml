@@ -1,0 +1,21 @@
+# Task 7 cavity-fix smoke — verify drawer_interior / slider_interior fixture
+# resolution + VLM slider_accessible_chamber half-slicing. 1 ep each.
+
+condition_name: "Task 7 cavity-fix smoke"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/task7_cavity_fix_cache
+  scene_grounding.enabled: true
+
+tasks:
+  - place_in_slider
+  - push_into_drawer

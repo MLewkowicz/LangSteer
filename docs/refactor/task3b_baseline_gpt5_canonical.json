@@ -1,0 +1,132 @@
+{
+  "_help": "Phase 0 \u00a72.0a baseline refresh on gpt-5.4-mini canonical instructions only.",
+  "meta": {
+    "llm_model": "gpt-5.4-mini",
+    "llm_temperature": 0,
+    "cache_dir": "/tmp/task3b_audit_cache_gpt5_4_mini",
+    "eval_max_steps": 120,
+    "eval_episodes_per_task": 5,
+    "branch": "refactoring",
+    "previous_baseline": "3a iter-5 on gpt-4o: 78/140 = 55.7%"
+  },
+  "overall": {
+    "successes": 73,
+    "attempted": 140,
+    "rate": "73/140 = 52.1%",
+    "vs_3a_iter5": "78/140 = 55.7% \u2192 73/140 = 52.1% (-3.6pp, gpt-5.4-mini regression)"
+  },
+  "per_task": {
+    "push_red_block_right": {
+      "success": 3,
+      "attempted": 5
+    },
+    "push_red_block_left": {
+      "success": 3,
+      "attempted": 5
+    },
+    "push_blue_block_right": {
+      "success": 0,
+      "attempted": 5
+    },
+    "push_blue_block_left": {
+      "success": 2,
+      "attempted": 5
+    },
+    "push_pink_block_right": {
+      "success": 4,
+      "attempted": 5
+    },
+    "push_pink_block_left": {
+      "success": 4,
+      "attempted": 5
+    },
+    "move_slider_left": {
+      "success": 3,
+      "attempted": 5
+    },
+    "move_slider_right": {
+      "success": 3,
+      "attempted": 5
+    },
+    "open_drawer": {
+      "success": 5,
+      "attempted": 5
+    },
+    "close_drawer": {
+      "success": 3,
+      "attempted": 5
+    },
+    "lift_red_block_table": {
+      "success": 2,
+      "attempted": 5
+    },
+    "lift_blue_block_table": {
+      "success": 2,
+      "attempted": 5
+    },
+    "lift_pink_block_table": {
+      "success": 3,
+      "attempted": 5
+    },
+    "lift_red_block_slider": {
+      "success": 2,
+      "attempted": 5
+    },
+    "lift_blue_block_slider": {
+      "success": 5,
+      "attempted": 5
+    },
+    "lift_pink_block_slider": {
+      "success": 3,
+      "attempted": 5
+    },
+    "lift_red_block_drawer": {
+      "success": 4,
+      "attempted": 5
+    },
+    "lift_blue_block_drawer": {
+      "success": 2,
+      "attempted": 5
+    },
+    "lift_pink_block_drawer": {
+      "success": 4,
+      "attempted": 5
+    },
+    "place_in_slider": {
+      "success": 0,
+      "attempted": 5
+    },
+    "place_in_drawer": {
+      "success": 4,
+      "attempted": 5
+    },
+    "push_into_drawer": {
+      "success": 0,
+      "attempted": 5
+    },
+    "stack_block": {
+      "success": 0,
+      "attempted": 5
+    },
+    "unstack_block": {
+      "success": 1,
+      "attempted": 5
+    },
+    "turn_on_lightbulb": {
+      "success": 1,
+      "attempted": 5
+    },
+    "turn_off_lightbulb": {
+      "success": 0,
+      "attempted": 5
+    },
+    "turn_on_led": {
+      "success": 5,
+      "attempted": 5
+    },
+    "turn_off_led": {
+      "success": 5,
+      "attempted": 5
+    }
+  }
+}

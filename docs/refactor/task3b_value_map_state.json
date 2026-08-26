@@ -1,0 +1,214 @@
+{
+  "per_task": [
+    {
+      "task": "push_blue_block_right",
+      "instruction": "push right the blue block",
+      "stages": [
+        {
+          "stage": 0,
+          "primitive": "grasp",
+          "object": "blue_block",
+          "mode": "track",
+          "raw_affordance_nonzero_voxels": 1,
+          "centroid_world": [
+            0.003535330295562744,
+            -0.001515209674835205,
+            0.30000001192092896
+          ],
+          "voxel_writer": "single_voxel"
+        },
+        {
+          "stage": 1,
+          "primitive": "place",
+          "object": "blue_block",
+          "mode": "static",
+          "raw_affordance_nonzero_voxels": 1,
+          "centroid_world": [
+            0.1732322871685028,
+            -0.001515209674835205,
+            0.30000001192092896
+          ],
+          "voxel_writer": "single_voxel"
+        }
+      ]
+    },
+    {
+      "task": "place_in_slider",
+      "instruction": "put the object in the sliding cabinet",
+      "stages": [
+        {
+          "stage": 0,
+          "primitive": "grasp",
+          "object": "block",
+          "aff_error": "AttributeError: 'IterableDynamicObservation' object has no attribute 'position'"
+        },
+        {
+          "stage": 1,
+          "primitive": "place",
+          "object": "block",
+          "mode": "static",
+          "raw_affordance_nonzero_voxels": 1,
+          "centroid_world": [
+            0.18030300736427307,
+            -0.009090900421142578,
+            0.35555556416511536
+          ],
+          "voxel_writer": "single_voxel"
+        }
+      ]
+    },
+    {
+      "task": "stack_block",
+      "instruction": "stack blocks on top of each other",
+      "stages": [
+        {
+          "stage": 0,
+          "primitive": "grasp",
+          "object": "block",
+          "mode": "track",
+          "raw_affordance_nonzero_voxels": 1,
+          "centroid_world": [
+            0.003535330295562744,
+            -0.001515209674835205,
+            0.30000001192092896
+          ],
+          "voxel_writer": "single_voxel"
+        },
+        {
+          "stage": 1,
+          "primitive": "place",
+          "object": "block",
+          "mode": "static",
+          "raw_affordance_nonzero_voxels": 1,
+          "centroid_world": [
+            0.003535330295562744,
+            -0.001515209674835205,
+            0.3500000238418579
+          ],
+          "voxel_writer": "single_voxel"
+        }
+      ]
+    },
+    {
+      "task": "close_drawer",
+      "instruction": "close the cabinet drawer",
+      "stages": [
+        {
+          "stage": 0,
+          "primitive": "push",
+          "object": "drawer_handle",
+          "mode": "static",
+          "raw_affordance_nonzero_voxels": 1,
+          "centroid_world": [
+            0.18030300736427307,
+            -0.4106060862541199,
+            0.3611111342906952
+          ],
+          "voxel_writer": "single_voxel"
+        },
+        {
+          "stage": 1,
+          "primitive": "push",
+          "object": "drawer_handle",
+          "mode": "static",
+          "raw_affordance_nonzero_voxels": 1,
+          "centroid_world": [
+            0.18030300736427307,
+            -0.22121214866638184,
+            0.3611111342906952
+          ],
+          "voxel_writer": "single_voxel"
+        }
+      ]
+    },
+    {
+      "task": "push_into_drawer",
+      "instruction": "sweep the block into the drawer",
+      "stages": [
+        {
+          "stage": 0,
+          "primitive": "grasp",
+          "object": "block",
+          "aff_error": "AttributeError: 'IterableDynamicObservation' object has no attribute 'position'"
+        },
+        {
+          "stage": 1,
+          "primitive": "place",
+          "object": "block",
+          "mode": "static",
+          "raw_affordance_nonzero_voxels": 1,
+          "centroid_world": [
+            0.18030300736427307,
+            -0.009090900421142578,
+            0.35555556416511536
+          ],
+          "voxel_writer": "single_voxel"
+        }
+      ]
+    },
+    {
+      "task": "push_blue_block_left",
+      "instruction": "push left the blue block",
+      "stages": [
+        {
+          "stage": 0,
+          "primitive": "grasp",
+          "object": "blue_block",
+          "mode": "track",
+          "raw_affordance_nonzero_voxels": 1,
+          "centroid_world": [
+            0.003535330295562744,
+            -0.001515209674835205,
+            0.30000001192092896
+          ],
+          "voxel_writer": "single_voxel"
+        },
+        {
+          "stage": 1,
+          "primitive": "place",
+          "object": "blue_block",
+          "mode": "static",
+          "raw_affordance_nonzero_voxels": 1,
+          "centroid_world": [
+            -0.1732323318719864,
+            -0.001515209674835205,
+            0.30000001192092896
+          ],
+          "voxel_writer": "single_voxel"
+        }
+      ]
+    },
+    {
+      "task": "place_in_drawer",
+      "instruction": "store the object in the drawer",
+      "stages": [
+        {
+          "stage": 0,
+          "primitive": "grasp",
+          "object": "block",
+          "aff_error": "AttributeError: 'IterableDynamicObservation' object has no attribute 'position'"
+        },
+        {
+          "stage": 1,
+          "primitive": "place",
+          "object": "block",
+          "mode": "static",
+          "raw_affordance_nonzero_voxels": 1,
+          "centroid_world": [
+            0.18030300736427307,
+            -0.08484852313995361,
+            0.3611111342906952
+          ],
+          "voxel_writer": "single_voxel"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_residual_tasks": 7,
+    "total_stages_inspected": 14,
+    "single_voxel_stages": 11,
+    "filled_region_stages": 0,
+    "centroid_collapse_rate": 0.7857142857142857
+  }
+}

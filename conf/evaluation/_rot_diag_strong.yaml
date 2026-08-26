@@ -1,0 +1,24 @@
+# Diagnostic eval: maximum rotation steering pressure.
+# Tests whether the policy's rotation prediction can be flipped at all.
+# If chord_d shrinks → mode collapse confirmed, fix is stronger steering.
+# If chord_d stays at max → there's a frame/gradient bug, not just weakness.
+condition_name: "ROT-DIAG strong rot (strength=5, alpha_max=1.0)"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/rot_diag_cache
+  guidance_strength_rot: 5.0
+  rot_horizon_alpha_max: 1.0
+  rot_horizon_floor: 0.1
+
+tasks:
+  - rotate_red_block_left
+  - rotate_red_block_right

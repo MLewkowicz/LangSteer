@@ -1,0 +1,15 @@
+We are writing a paper about the method created in this repository for steering diffusion policies with language derived value maps. This will be a paper for CoRL (the Conference on Robot Learning) and our goal is to write up the method and convey the interesting results of this method in a well written paper.
+
+The paper currently has part of an introduction section, part of the abstract and some of the description of the method although THESE ALL NEED REVISIONS. 
+
+There are three stages in this project. We are first validating our method in the CALVIN environment. All the relevant components are described in the repository CLAUDE.md The final version of our model that we will be reporting on is our object + action primitive conditioned model. We will be pitting this model against the base language conditioned model that relies on CLIP embeddings to ground to instructions that are present in the training dataset. We will be validating our method against the base model with their faithful language instructions then we will do 4 additional evaluations with perturbed language instructions.
+
+The varying stages of perturbation are present in the draft (P1 through P4) and can also be found in the @perturbed_language_annotations.json 
+
+The next stages include an Isaac extension in 2 different task environments. As I was building the Isaac extension to collect data and train a diffusion policy on different modes I extended my dataset collection to write a brief benchmark project which might be useful for understanding the motivation behind the Isaac validation of this method @paper/benchmark_project.md. However, this benchmark paper has largely nothing to do with this paper, although you may use it to orient parts of this paper (since it was written by me). The first task environment is a kitchenware unloading task where we collect demonstrations of a robot putting away objects into a cabinet with varying configurations. The goal of this task environment is to show how this method can express arbitrary spatial preferences over objects. The second task environment is unloading a wine glass into a cabinet upright or hang it upside down on a wine rack (this mode is not shown in the benchmark paper). We will reimplement these two task environments in a real world hardware demo with a perception pipeline (remember that Isaac and CALVIN use ground truth bounding boxes). The goal is to show that we can use a pipeline like SAM3D + Iterative closest point + semantic label extraction over which we will be generating value maps.
+
+I will also need advice on how to present the data for this paper.
+
+To understand the structure that is expected of a CoRL paper I attached a previous CoRL paper that I wrote on Constrastive Learning. This also has nothing to do with this paper but it can serve as a useful reference to understand the prose that I write with and how much room we have for a paper submission.
+
+The presentation that I have been using to accompany this method is in @LangSteer Presentation Slides Michal Lewkowicz.pdf

@@ -1,0 +1,23 @@
+# P1 perturbation — 4 cavity / multi-block tasks with VLM scene grounding ON.
+# Pair with `_p1_vlm_off.yaml` for the other 30 langsteer_primitive_object
+# tasks; both run in one CLI invocation under a single output dir.
+condition_name: "P1 VLM-on (place_in_slider, place_in_drawer, push_into_drawer, stack_block)"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/p1_vlm_on_cache
+  scene_grounding.enabled: true
+
+tasks:
+  - place_in_slider
+  - place_in_drawer
+  - push_into_drawer
+  - stack_block

@@ -24,3 +24,8 @@ visualization:
     # Optional FOV override for static camera re-renders (degrees).
     # null = use CALVIN's native 10°. Increase to ~20-30° to see full robot arm.
     static_camera_fov: 20
+    # Anti-aliasing / background for the static re-render (policy inputs unaffected).
+    static_supersample: 1     # SSAA factor: render at ss× then downscale (INTER_AREA)
+    white_background: false   # composite white over floor-plane + void (seg-mask)
+    render_backend: tiny      # 'tiny' (software + SSAA) | 'egl' (hardware MSAA + shadows)
+    depth_margin: null        # tighten near/far to cam_dist±margin (fixes block z-fighting); null=native

@@ -1,0 +1,302 @@
+{
+  "_help": "Phase 0 audit baseline for Task 3a / 3b. Diff against this file in subsequent iterations. Generated 2026-05-18 by refactorer.",
+  "meta": {
+    "branch": "refactoring",
+    "head_at_audit": "post-Task-2",
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o",
+    "llm_temperature": 0,
+    "audit_cache_dir": "/tmp/task3_audit_cache_baseline",
+    "tasks_audited": 28,
+    "task_order_file": "conf/evaluation/task_order.json",
+    "eval_max_steps": 120,
+    "eval_episodes_per_task": 3
+  },
+
+  "per_task_composer_emissions": "see docs/refactor/task3a_baseline_emissions.json (full raw + classified records, 28 tasks × N stages)",
+
+  "composer_emission_summary": {
+    "tasks_total": 28,
+    "tasks_with_composer_errors": 0,
+    "tasks_with_dropped_stages": 2,
+    "stages_total": 55,
+    "stages_dropped": 4,
+    "dropped_tasks": ["move_slider_left", "move_slider_right"],
+    "dropped_reason_distribution": {
+      "invalid object 'door_handle'": 4
+    },
+    "semantic_mismatches_not_caught_by_parser": [
+      {
+        "task": "turn_on_led",
+        "instruction": "turn on the green light",
+        "issue": "LLM emits (push, lightbulb_switch) × 2 instead of (push, led_button). Both valid vocab so parser accepts, but the policy gets conditioned on the wrong object.",
+        "suggested_fix_class": "instruction → object disambiguation; cheat-sheet entry 'green light = LED, yellow light = lightbulb' could help"
+      }
+    ],
+    "stage_strategy_inconsistencies": [
+      {
+        "tasks": ["push_red_block_left", "push_red_block_right"],
+        "emitted_strategy": "grasp → place (matches the red_block in-context example)"
+      },
+      {
+        "tasks": ["push_blue_block_*", "push_pink_block_*"],
+        "emitted_strategy": "2-stage push (despite in-context blue/pink examples using grasp→place)",
+        "note": "LLM is pattern-matching color → strategy from the examples, but the color mapping in the prompt is inconsistent. Reducing per-color push examples to one canonical pattern will eliminate this drift."
+      }
+    ]
+  },
+
+  "per_task_eval_baseline": {
+    "_help": "28 tasks × 3 episodes, max_steps=120, seed=42, cache_dir=/tmp/task3_audit_cache_baseline. Raw per-episode data at outputs/evaluation/task3_baseline/langsteer_primitive_object.json.",
+    "overall_success": "31/84 = 36.9%",
+    "results": {
+      "close_drawer":            {"success": 3, "attempted": 3, "rate": 1.00, "failure_mode": null},
+      "open_drawer":             {"success": 3, "attempted": 3, "rate": 1.00, "failure_mode": null},
+      "place_in_drawer":         {"success": 3, "attempted": 3, "rate": 1.00, "failure_mode": null},
+      "turn_off_led":            {"success": 3, "attempted": 3, "rate": 1.00, "failure_mode": null},
+      "turn_on_lightbulb":       {"success": 3, "attempted": 3, "rate": 1.00, "failure_mode": null},
+      "push_red_block_left":     {"success": 2, "attempted": 3, "rate": 0.67, "failure_mode": "policy-side trajectory miss"},
+      "push_red_block_right":    {"success": 2, "attempted": 3, "rate": 0.67, "failure_mode": "policy-side trajectory miss"},
+      "push_blue_block_left":    {"success": 2, "attempted": 3, "rate": 0.67, "failure_mode": "policy-side trajectory miss"},
+      "push_into_drawer":        {"success": 2, "attempted": 3, "rate": 0.67, "failure_mode": "policy-side"},
+      "lift_pink_block_table":   {"success": 2, "attempted": 3, "rate": 0.67, "failure_mode": "policy-side"},
+      "unstack_block":           {"success": 2, "attempted": 3, "rate": 0.67, "failure_mode": "policy-side"},
+      "push_pink_block_right":   {"success": 1, "attempted": 3, "rate": 0.33, "failure_mode": "policy-side"},
+      "lift_red_block_table":    {"success": 1, "attempted": 3, "rate": 0.33, "failure_mode": "policy-side"},
+      "turn_off_lightbulb":      {"success": 1, "attempted": 3, "rate": 0.33, "failure_mode": "policy-side"},
+      "stack_block":             {"success": 1, "attempted": 3, "rate": 0.33, "failure_mode": "policy-side"},
+      "move_slider_left":        {"success": 0, "attempted": 3, "rate": 0.00, "failure_mode": "composer vocab — door_handle dropped"},
+      "move_slider_right":       {"success": 0, "attempted": 3, "rate": 0.00, "failure_mode": "composer vocab — door_handle dropped"},
+      "turn_on_led":             {"success": 0, "attempted": 3, "rate": 0.00, "failure_mode": "composer semantic — emits lightbulb_switch instead of led_button"},
+      "push_blue_block_right":   {"success": 0, "attempted": 3, "rate": 0.00, "failure_mode": "policy-side (composer emits 2-stage push of blue_block, valid vocab)"},
+      "push_pink_block_left":    {"success": 0, "attempted": 3, "rate": 0.00, "failure_mode": "policy-side"},
+      "place_in_slider":         {"success": 0, "attempted": 3, "rate": 0.00, "failure_mode": "policy-side / value-map shape"},
+      "lift_blue_block_table":   {"success": 0, "attempted": 3, "rate": 0.00, "failure_mode": "policy-side"},
+      "lift_red_block_slider":   {"success": 0, "attempted": 3, "rate": 0.00, "failure_mode": "policy-side / value-map shape (lift-from-slider)"},
+      "lift_blue_block_slider":  {"success": 0, "attempted": 3, "rate": 0.00, "failure_mode": "policy-side / value-map shape (lift-from-slider)"},
+      "lift_pink_block_slider":  {"success": 0, "attempted": 3, "rate": 0.00, "failure_mode": "policy-side / value-map shape (lift-from-slider)"},
+      "lift_red_block_drawer":   {"success": 0, "attempted": 3, "rate": 0.00, "failure_mode": "policy-side / value-map shape (lift-from-drawer)"},
+      "lift_blue_block_drawer":  {"success": 0, "attempted": 3, "rate": 0.00, "failure_mode": "policy-side / value-map shape (lift-from-drawer)"},
+      "lift_pink_block_drawer":  {"success": 0, "attempted": 3, "rate": 0.00, "failure_mode": "policy-side / value-map shape (lift-from-drawer)"}
+    },
+    "category_buckets": {
+      "perfect_3_of_3":   ["close_drawer", "open_drawer", "place_in_drawer", "turn_off_led", "turn_on_lightbulb"],
+      "partial_2_of_3":   ["push_red_block_left", "push_red_block_right", "push_blue_block_left", "push_into_drawer", "lift_pink_block_table", "unstack_block"],
+      "partial_1_of_3":   ["push_pink_block_right", "lift_red_block_table", "turn_off_lightbulb", "stack_block"],
+      "zero_composer_blocked": ["move_slider_left", "move_slider_right", "turn_on_led"],
+      "zero_policy_blocked":   ["push_blue_block_right", "push_pink_block_left", "place_in_slider", "lift_blue_block_table", "lift_red_block_slider", "lift_blue_block_slider", "lift_pink_block_slider", "lift_red_block_drawer", "lift_blue_block_drawer", "lift_pink_block_drawer"]
+    },
+    "failure_mode_distribution": {
+      "composer-side (vocab + semantic)": "3/28 tasks always-fail — move_slider_*, turn_on_led",
+      "policy-side / value-map shape":    "10/28 tasks 0% — overwhelmingly the lift-from-{slider,drawer} pattern + place_in_slider + two block-color pushes",
+      "partial successes (mixed)":        "10/28 tasks 33-67% — usually policy execution timing / grasp closure",
+      "stable wins":                      "5/28 tasks 100%"
+    }
+  },
+
+  "prompt_bloat_audit": {
+    "composer_prompt": {
+      "path": "voxposer/prompts/calvin/composer_prompt.txt",
+      "lines_total": 367,
+      "doc_section_lines": "L1-101 (vocab + steering-split + rotate idiom + contact-physics priors)",
+      "examples": [
+        {"lines": "L103-113", "query": "open the drawer", "category": "leakage+load-bearing", "match_in_28": "open_drawer", "note": "1:1 with benchmark task; also the canonical handle grasp+pull pattern"},
+        {"lines": "L115-125", "query": "close the drawer", "category": "leakage", "match_in_28": "close_drawer"},
+        {"lines": "L127-136", "query": "push the red block to the left", "category": "leakage", "match_in_28": "push_red_block_left", "note": "2-stage push canonical pattern; replace task name with a non-benchmark target"},
+        {"lines": "L138-148", "query": "push the blue block to the right", "category": "leakage", "match_in_28": "push_blue_block_right", "note": "grasp→place alternative; redundant with L150-160"},
+        {"lines": "L150-160", "query": "push the pink block to the left", "category": "leakage+bloat", "match_in_28": "push_pink_block_left", "note": "near-duplicate of L138-148; collapse to one canonical grasp→place"},
+        {"lines": "L162-173", "query": "push the block into the drawer", "category": "leakage", "match_in_28": "push_into_drawer"},
+        {"lines": "L175-186", "query": "lift the blue block from the table", "category": "leakage", "match_in_28": "lift_blue_block_table", "note": "canonical lift = grasp + spatial-above target"},
+        {"lines": "L188-198", "query": "lift the pink block from the slider", "category": "leakage+bloat", "match_in_28": "lift_pink_block_slider", "note": "near-duplicate of L175-186; collapse to one canonical lift"},
+        {"lines": "L209-221", "query": "rotate the red block to the left", "category": "leakage+load-bearing", "match_in_28": "rotate_red_block_left", "note": "canonical rotate; section header L200-207 is load-bearing for rotate-vs-lift distinction"},
+        {"lines": "L223-232", "query": "rotate the red block to the right", "category": "leakage+bloat", "match_in_28": "rotate_red_block_right", "note": "near-duplicate of L209-221; differs only in sign(angle)"},
+        {"lines": "L234-243", "query": "rotate the blue block to the left", "category": "leakage+bloat", "match_in_28": "rotate_blue_block_left", "note": "near-duplicate; color is a free axis"},
+        {"lines": "L245-255", "query": "move the slider to the left", "category": "leakage+load-bearing", "match_in_28": "move_slider_left", "note": "Yet move_slider_left STILL fails — the LLM ignores this example and emits door_handle. Indicates the example is being dominated by the instruction's natural-language framing ('slide the door')."},
+        {"lines": "L257-265", "query": "move the slider to the right", "category": "leakage", "match_in_28": "move_slider_right", "note": "Also fails — same door_handle bug"},
+        {"lines": "L267-276", "query": "turn on the lightbulb", "category": "leakage", "match_in_28": "turn_on_lightbulb"},
+        {"lines": "L278-286", "query": "turn off the lightbulb", "category": "leakage+bloat", "match_in_28": "turn_off_lightbulb", "note": "near-duplicate (mirror of L267-276)"},
+        {"lines": "L288-293", "query": "turn on the led", "category": "leakage", "match_in_28": "turn_on_led"},
+        {"lines": "L295-298", "query": "turn off the led", "category": "leakage+bloat", "match_in_28": "turn_off_led", "note": "trivial duplicate of L288-293"},
+        {"lines": "L300-311", "query": "place the red block in the drawer", "category": "leakage", "match_in_28": "place_in_drawer"},
+        {"lines": "L313-322", "query": "stack the pink block on top of the red block", "category": "leakage", "match_in_28": "stack_block"},
+        {"lines": "L324-332", "query": "unstack the blocks", "category": "leakage", "match_in_28": "unstack_block"},
+        {"lines": "L334-344", "query": "push the red block to the left while avoiding the blue block", "category": "load-bearing", "match_in_28": null, "note": "avoidance composition not in benchmark; KEEP"},
+        {"lines": "L346-357", "query": "rotate blue_block", "category": "load-bearing", "match_in_28": null, "note": "structured-form query pattern; KEEP"},
+        {"lines": "L359-367", "query": "pull drawer_handle", "category": "load-bearing", "match_in_28": null, "note": "structured-form query pattern; KEEP"}
+      ],
+      "load_bearing_doc_blocks": [
+        "L1-7: stage tuple form schema (5/6-tuple)",
+        "L8-37: vocab terminal + field semantics",
+        "L39-58: steering/primitive/policy split",
+        "L60-72: world-frame rotation idiom (non-obvious — NEVER paraphrase)",
+        "L74-77: 'rotate is not a lift' warning",
+        "L79-96: contact-physics priors (push 2-stage, grasp→place alternative, pull)",
+        "L97-101: vocab terminal + 'every stage must carry an object'",
+        "L200-207: rotate tasks critical-distinctions block"
+      ],
+      "strip_target_estimate": {
+        "from_lines": 367,
+        "to_lines": "150-180",
+        "strategy": "Collapse 23 examples → ~9 canonical patterns (1 each): handle-grasp+pull (open_drawer), 2-stage push of a block, grasp→place of a block, lift = grasp+spatial-above, single-stage vertical poke (button), 2-stage lever toggle (lightbulb), rotate +90° (with the critical-distinctions block), stack/place-above-destination, plus the load-bearing avoidance + 2 structured-form examples"
+      }
+    },
+    "get_affordance_map_prompt": {
+      "path": "voxposer/prompts/calvin/get_affordance_map_prompt.txt",
+      "lines_total": 146,
+      "examples": [
+        {"lines": "L5-10",   "query": "point at center of red block", "category": "load-bearing", "note": "canonical center pattern"},
+        {"lines": "L12-22",  "query": "5cm above blue block", "category": "load-bearing", "note": "canonical 'above' offset pattern"},
+        {"lines": "L24-34",  "query": "10cm left of red block", "category": "bloat", "note": "near-duplicate of right-offset; consolidate"},
+        {"lines": "L36-46",  "query": "10cm right of pink block", "category": "load-bearing", "note": "keep one left+right exemplar, drop the other"},
+        {"lines": "L48-58",  "query": "front of drawer handle", "category": "load-bearing", "note": "exercises 'front' = -y idiom"},
+        {"lines": "L60-65",  "query": "point at lightbulb", "category": "bloat", "note": "trivial point pattern; redundant with L5-10"},
+        {"lines": "L67-72",  "query": "point at button", "category": "bloat", "note": "trivial; redundant"},
+        {"lines": "L74-84",  "query": "left side of slider", "category": "bloat", "note": "min_x pattern, near-duplicate of left-offset"},
+        {"lines": "L86-96",  "query": "right side of slider", "category": "bloat", "note": "max_x pattern, near-duplicate"},
+        {"lines": "L98-102", "query": "anywhere within 5cm of drawer handle", "category": "load-bearing", "note": "the ONLY set_voxel_by_radius example in this prompt"},
+        {"lines": "L104-114", "query": "15cm behind drawer handle", "category": "bloat", "note": "exercises 'behind' = +y; either keep this or drop and merge with front example"},
+        {"lines": "L116-126", "query": "left side of table", "category": "bloat", "note": "redundant left-side pattern"},
+        {"lines": "L128-133", "query": "point at light switch", "category": "bloat", "note": "trivial point pattern"},
+        {"lines": "L135-141", "query": "all voxels inside slider handle (tilted)", "category": "load-bearing", "note": "introduces set_voxel_by_box for tilted geometry"},
+        {"lines": "L143-147", "query": "all voxels inside drawer handle with 2cm pad", "category": "load-bearing", "note": "introduces pad_cm; needed for Phase 3b (full-bbox affordances)"}
+      ],
+      "strip_target_estimate": {
+        "from_lines": 146,
+        "to_lines": "70-90",
+        "strategy": "Drop near-duplicate single-point patterns (L60-72, L116-133); consolidate 6-direction offsets into one left+right and one above+below example (covering 4 of 6 directions, with the other 2 derivable)"
+      }
+    },
+    "get_avoidance_map_prompt": {
+      "path": "voxposer/prompts/calvin/get_avoidance_map_prompt.txt",
+      "lines_total": 52,
+      "examples": [
+        {"lines": "L5-9",   "query": "10cm from red block", "category": "load-bearing", "note": "canonical radius avoidance"},
+        {"lines": "L11-15", "query": "5cm from blue block", "category": "bloat", "note": "near-duplicate of L5-9"},
+        {"lines": "L17-23", "query": "10cm from drawer and 5cm from pink block", "category": "bloat", "note": "multi-object avoidance — never emitted by composer in 28-task audit"},
+        {"lines": "L25-29", "query": "15cm from lightbulb", "category": "bloat", "note": "near-duplicate radius pattern"},
+        {"lines": "L31-39", "query": "10cm from all blocks", "category": "bloat", "note": "rare composite pattern"},
+        {"lines": "L41-47", "query": "inside slider OBB", "category": "load-bearing", "note": "set_voxel_by_box pattern for tilted geometry"},
+        {"lines": "L49-53", "query": "inside red block OBB w/ 3cm margin", "category": "load-bearing", "note": "set_voxel_by_box with pad_cm"}
+      ],
+      "strip_target_estimate": {
+        "from_lines": 52,
+        "to_lines": "20-30",
+        "strategy": "Drop multi-object + composite avoidances (never emitted by 28-task composer); keep one canonical radius + two OBB patterns"
+      }
+    },
+    "parse_query_obj_prompt": {
+      "path": "voxposer/prompts/calvin/parse_query_obj_prompt.txt",
+      "lines_total": 74,
+      "examples": [
+        {"lines": "L4-7",   "query": "gripper", "category": "load-bearing"},
+        {"lines": "L9-12",  "query": "red block", "category": "load-bearing"},
+        {"lines": "L14-17", "query": "drawer handle", "category": "load-bearing", "note": "calls detect('drawer_handle') with underscore — INCONSISTENT with other prompts that use spaces"},
+        {"lines": "L19-22", "query": "table", "category": "load-bearing"},
+        {"lines": "L24-27", "query": "lightbulb", "category": "bloat", "note": "trivial; redundant"},
+        {"lines": "L29-32", "query": "slider", "category": "bloat", "note": "trivial"},
+        {"lines": "L34-37", "query": "button", "category": "bloat", "note": "trivial"},
+        {"lines": "L39-48", "query": "block closest to slider", "category": "bloat", "note": "complex; never used by composer/get_affordance_map in 28-task audit"},
+        {"lines": "L50-59", "query": "leftmost block", "category": "bloat", "note": "complex; never used"},
+        {"lines": "L61-64", "query": "light switch", "category": "bloat", "note": "trivial; same shape as L24-27"},
+        {"lines": "L66-69", "query": "black button", "category": "bloat", "note": "redundant"},
+        {"lines": "L71-75", "query": "green block (no exact match → fallback to red block)", "category": "bloat", "note": "dead pattern; LLM never emits 'green block' queries"}
+      ],
+      "strip_target_estimate": {
+        "from_lines": 74,
+        "to_lines": "25-35",
+        "strategy": "Keep 4 canonical patterns: gripper, a single block (red), an underscored handle (drawer_handle), and one fixture (lightbulb). Drop complex composition patterns and the dead 'green block' fallback. Normalize underscore-vs-space usage across all prompt examples."
+      }
+    }
+  },
+
+  "helper_usage": {
+    "_help": "Per-helper reference count across the 4 prompt files. Helpers exposed to the LMP namespace via voxposer/lmp.py:setup_lmp's `dir(lmp_interface)` reflection.",
+    "dead_helpers_exposed_to_llm": [
+      {"name": "get_ee_pos", "references": 0, "action": "remove (iter 3)"},
+      {"name": "quaternion_from_axis_angle", "references": 0, "action": "remove (iter 3)"}
+    ],
+    "host_side_methods_exposed_via_reflection": [
+      {"name": "update_state", "references": 0, "note": "host-side; called by StageManager.refresh"},
+      {"name": "get_object_names", "references": 0, "note": "host-side; called by StageManager.setup_episode"},
+      {"name": "get_all_detections", "references": 0, "note": "host-side; called by visualizer + StageManager.snapshot"}
+    ],
+    "load_bearing_helpers": [
+      {"name": "detect",                    "references": 19, "where": "parse_query_obj_prompt only"},
+      {"name": "cm2index",                  "references": 7,  "where": "affordance + avoidance prompts"},
+      {"name": "set_voxel_by_radius",       "references": 12, "where": "affordance + avoidance prompts"},
+      {"name": "set_voxel_by_box",          "references": 8,  "where": "affordance + avoidance prompts"},
+      {"name": "get_empty_affordance_map",  "references": 16, "where": "affordance prompt"},
+      {"name": "get_empty_avoidance_map",   "references": 8,  "where": "avoidance prompt"},
+      {"name": "rotation_about_axis",       "references": 8,  "where": "composer prompt (rotate idiom)"},
+      {"name": "compose_rotation",          "references": 8,  "where": "composer prompt"},
+      {"name": "current_ee_rotation",       "references": 7,  "where": "composer prompt"}
+    ],
+    "lmp_sub_skills": [
+      {"name": "parse_query_obj",     "references": 51},
+      {"name": "get_affordance_map",  "references": 45},
+      {"name": "get_avoidance_map",   "references": 2}
+    ]
+  },
+
+  "leakage_imports": {
+    "_help": "grep -rn 'action_primitive_object_annotations' --include='*.py' -- voxposer/ steering/ policies/ scripts/",
+    "voxposer": [],
+    "steering": [],
+    "policies": [],
+    "scripts": [
+      "scripts/preprocess_primitive_object_annotations.py:3 (training-data preprocessing — non-composer path, OK)",
+      "scripts/preprocess_primitive_object_annotations.py:17",
+      "scripts/preprocess_primitive_object_annotations.py:242"
+    ],
+    "pass": true,
+    "note": "Zero inference-path hits in voxposer/, steering/, policies/. Training-side hits are documented + intentional."
+  },
+
+  "phase0_summary_for_iter1": {
+    "baseline_overall": "31/84 = 36.9% (28 tasks × 3 ep, max_steps=120)",
+    "failure_mode_taxonomy": {
+      "composer_vocab_dropped": {
+        "count": 2,
+        "tasks": ["move_slider_left", "move_slider_right"],
+        "fixable_by_iter1": true,
+        "max_episode_lift": 6
+      },
+      "composer_semantic_wrong_object": {
+        "count": 1,
+        "tasks": ["turn_on_led"],
+        "fixable_by_iter1": false,
+        "fixable_by_iter2_cheatsheet": true,
+        "max_episode_lift": 3
+      },
+      "policy_side_zero": {
+        "count": 10,
+        "tasks": ["push_blue_block_right", "push_pink_block_left", "place_in_slider", "lift_blue_block_table", "lift_red_block_slider", "lift_blue_block_slider", "lift_pink_block_slider", "lift_red_block_drawer", "lift_blue_block_drawer", "lift_pink_block_drawer"],
+        "fixable_by_iter1": false,
+        "fixable_by_phase3b": "likely (value-map shape — bbox affordances + obstacle masking should help lift-from-deep-place)",
+        "note": "Lift-from-slider and lift-from-drawer dominate (6/10). Likely the policy can't extract the block when the centroid-point affordance is buried inside the slider/drawer interior."
+      },
+      "partial_mixed": {
+        "count": 10,
+        "tasks_at_67pct": ["push_red_block_left", "push_red_block_right", "push_blue_block_left", "push_into_drawer", "lift_pink_block_table", "unstack_block"],
+        "tasks_at_33pct": ["push_pink_block_right", "lift_red_block_table", "turn_off_lightbulb", "stack_block"],
+        "fixable_by_iter1": false
+      },
+      "stable_wins": {
+        "count": 5,
+        "tasks": ["close_drawer", "open_drawer", "place_in_drawer", "turn_off_led", "turn_on_lightbulb"]
+      }
+    },
+    "iter1_priority": "vocab linter + HANDLE_ALIASES{door_handle→slider_handle} in voxposer/lmp.py — directly fixes the 4 dropped stages on move_slider_*",
+    "iter1_canary": "move_slider_left × 3 ep — baseline 0/3, target ≥1/3 after stages emit valid vocab and value maps activate",
+    "iter1_max_episode_lift": 6,
+    "iter1_max_overall_lift": "31 → 37 (36.9% → 44.0%) — modest but expected since iter 1 only fixes 2 of the 23 failing tasks",
+    "iter2_targets_via_audit": [
+      "turn_on_led (composer prompt cheat-sheet 'green light = LED, yellow light = lightbulb')",
+      "push_pink_block_left + push_blue_block_right (composer strategy-color drift — collapse to one canonical push pattern)"
+    ],
+    "phase3b_targets_via_audit": [
+      "lift_*_slider + lift_*_drawer (6 tasks; centroid affordance buried inside cavity — needs full-bbox or shifted target)",
+      "place_in_slider (2-stage place fails when destination is interior)"
+    ]
+  }
+}

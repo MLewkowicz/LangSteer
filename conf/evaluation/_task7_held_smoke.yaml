@@ -1,0 +1,20 @@
+# Task 7 held-block-fix smoke — verify VLM tags held block + composer
+# emits 1-stage place with generic 'block'.
+
+condition_name: "Task 7 held-block smoke (place_in_slider × 1)"
+
+policy_config: diffuser_actor_primitive_object
+
+policy:
+  ckpt_path: "checkpoints/object_primitive_ABCD.pth"
+  mask_language: false
+
+steering: voxposer
+
+steering_overrides:
+  loop_back_on_last_stage: true
+  cache_dir: /tmp/task7_held_smoke_cache
+  scene_grounding.enabled: true
+
+tasks:
+  - place_in_slider
