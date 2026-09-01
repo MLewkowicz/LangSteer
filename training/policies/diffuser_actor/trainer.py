@@ -683,28 +683,34 @@ class DiffuserActorTrainingWorkspace:
                     step=step_id,
                 )
 
-            # Val checkpoint (infrequent)
+            # Validation (gated independently from checkpoint saves so a huge
+            # val_freq — e.g. when val is empty after a dataset filter — does
+            # NOT also disable checkpointing).
+            val_metrics = None
             if self.is_main_process and (step_id + 1) % cfg.get("val_freq", 500) == 0:
-                # Validation
                 self.model.eval()
                 val_metrics = self._evaluate(val_loader, step_id)
                 self.model.train()
-
-                # Save checkpoint. Monitor traj_pos_l2 (lower=better, matches
-                # the `metric <= best_loss` direction in _save_checkpoint).
-                # The previous monitor traj_pos_acc_001 saturated at 0 early
-                # in training and made every subsequent save a "new best".
-                val_loss = val_metrics.get("val/traj_pos_l2", None)
-                self._save_checkpoint(topk_manager, step_id, val_loss)
-
                 if self.use_wandb:
                     import wandb
                     wandb.log(val_metrics, step=step_id)
 
-                logger.info(
-                    f"Step {step_id} | train_loss={loss.item():.4f} | lr={self.scheduler.get_last_lr()[0]:.2e} | "
-                    + " | ".join(f"{k}={v:.4f}" for k, v in val_metrics.items())
-                )
+            # Checkpoint save (independent cadence). Defaults to val_freq for
+            # backward compatibility; set save_freq smaller to keep
+            # checkpoints landing even when val is rare/disabled.
+            save_freq = int(cfg.get("save_freq", cfg.get("val_freq", 500)))
+            if self.is_main_process and (step_id + 1) % save_freq == 0:
+                # Monitor traj_pos_l2 (lower=better, matches the
+                # `metric <= best_loss` direction in _save_checkpoint). When
+                # val didn't run this step, pass None — last.pth + periodic
+                # still save; best.pth update is skipped.
+                val_loss = val_metrics.get("val/traj_pos_l2") if val_metrics else None
+                self._save_checkpoint(topk_manager, step_id, val_loss)
+
+                msg = f"Step {step_id} | train_loss={loss.item():.4f} | lr={self.scheduler.get_last_lr()[0]:.2e}"
+                if val_metrics:
+                    msg += " | " + " | ".join(f"{k}={v:.4f}" for k, v in val_metrics.items())
+                logger.info(msg)
 
         # Cleanup
         if self.is_distributed:

@@ -686,9 +686,9 @@ def main() -> int:
     # split has its own ann file).
     split_state: dict[str, dict] = {
         "training": {"counter": 0, "ann": [], "task": [], "indx": [],
-                     "primitive": [], "object": []},
+                     "primitive": [], "object": [], "episodes": []},
         "validation": {"counter": 0, "ann": [], "task": [], "indx": [],
-                       "primitive": [], "object": []},
+                       "primitive": [], "object": [], "episodes": []},
     }
 
     def _emit_segment(sp: Path, split: str, primitive: str, object_: str,
@@ -714,6 +714,7 @@ def main() -> int:
         s["indx"].append((0, n_kept - 1))   # within-.dat keyframe range
         s["primitive"].append(primitive)
         s["object"].append(object_)
+        s["episodes"].append(sp.stem)       # source episode name for downstream filters
         s["counter"] += 1
 
     for sp in state_files:
@@ -765,7 +766,7 @@ def main() -> int:
             },
             "info": {
                 "indx": s["indx"],
-                "episodes": [],
+                "episodes": list(s["episodes"]),
                 "parent_task": list(s["task"]),
                 "primitive": s["primitive"],
                 "object": s["object"],

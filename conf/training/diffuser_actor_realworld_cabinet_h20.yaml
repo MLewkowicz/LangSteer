@@ -1,0 +1,46 @@
+# Sidecar training config — cabinet-only data, plans 2× longer (horizon_frames=20).
+# Inherits from diffuser_actor_realworld_primitive_object; overrides only the
+# fields that differ for this experiment. Use to spin up an isolated variation
+# without touching the main config.
+#
+# Pre-reqs:
+#   1. realworld_3da_v2_cabinet/ exists (cabinet-filtered packaged data) —
+#      produced via `scripts/filter_dat_by_episode_prefix.py --keep_train_range 0:76`.
+#   2. policy.gripper_loc_bounds below was recomputed via
+#      `compute_relative_gripper_loc_bounds.py --horizon_frames 20` on that set
+#      and symmetrised. It happens to match the parent yaml's symmetric envelope
+#      here, but for future filtered/horizon combinations always recompute.
+#
+# Launch:
+#   uv run python scripts/train_diffuser_actor.py \
+#     training=diffuser_actor_realworld_cabinet_h20 \
+#     training.use_ema=false \
+#     training.checkpoint_dir=outputs/checkpoints/diffuser_actor_realworld_primitive_object_v7_cabinet_h20
+
+defaults:
+  - diffuser_actor_realworld_primitive_object
+
+policy:
+  # Recomputed for horizon_frames=20 on cabinet-only; symmetric envelope.
+  gripper_loc_bounds: [[-0.3654, -0.3203, -0.4476], [0.3654, 0.3203, 0.4476]]
+
+dataset:
+  # 2× longer plans: each predicted 20-waypoint trajectory now spans ~2 s of
+  # motion at 10 Hz (vs ~1 s for horizon_frames=10). Less open-loop reactivity
+  # per cycle, but the executor stays on each plan longer at deploy.
+  horizon_frames: 20
+  # Cabinet-only (training-segments 0..75 of realworld_3da_v2, filter-script
+  # output). Validation was empty after filtering — reuse train_path to keep
+  # the trainer's val dataset builder happy, and disable val via val_freq below.
+  train_path: "/home/clear/Documents/michal/realworld_3da_v2_cabinet/training"
+  val_path:   "/home/clear/Documents/michal/realworld_3da_v2_cabinet/training"
+  primitive_ann_path_train: "/home/clear/Documents/michal/realworld_3da_v2_cabinet/training/lang_annotations/primitive_object_lang_ann.npy"
+  primitive_ann_path_val:   "/home/clear/Documents/michal/realworld_3da_v2_cabinet/training/lang_annotations/primitive_object_lang_ann.npy"
+
+# Cabinet-only filter dropped the lone val segment; skip val entirely.
+# save_freq is decoupled from val_freq (trainer.py change) so checkpoints still
+# land every 500 iters even with val_freq pinned huge.
+val_freq: 999999
+save_freq: 500
+
+checkpoint_dir: "outputs/checkpoints/diffuser_actor_realworld_primitive_object_v7_cabinet_h20"
